@@ -22,6 +22,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     uint256 public constant UNIT = 1e18;
     uint256 public constant MAX_PCT = 10000;
     uint256 public constant WEEK = 7 * 86400;
+    uint256 public constant MAX_UINT = 2**256 - 1;
 
     // Storage :
 
@@ -53,7 +54,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice Address of the votingToken to delegate */
     IVotingEscrow public votingEscrow;
     /** @notice Address of the Delegation Boost contract */
-    IVotingEscrowDelegation public delegationBoost;
+    IBoostV2 public delegationBoost;
 
     /** @notice ratio of fees to be set as Reserve (in BPS) */
     uint256 public feeReserveRatio; //bps
@@ -132,6 +133,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     /** @notice List of the Boost purchased by an user */
     mapping(address => uint256[]) public userPurchasedBoosts;
+
+    uint256 public nextBoostId;
     
     /** @notice Reward token to distribute to buyers */
     IERC20 public rewardToken;
@@ -150,7 +153,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address indexed delegator,
         address indexed receiver,
         uint256 tokenId,
-        uint256 percent, //bps
+        uint256 amount,
         uint256 price,
         uint256 paidFeeAmount,
         uint256 expiryTime
@@ -187,7 +190,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     ) {
         feeToken = IERC20(_feeToken);
         votingEscrow = IVotingEscrow(_votingEscrow);
-        delegationBoost = IVotingEscrowDelegation(_delegationBoost);
+        delegationBoost = IBoostV2(_delegationBoost);
 
         require(_advisedPrice > 0);
         advisedPrice = _advisedPrice;
@@ -343,7 +346,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     ) external whenNotPaused rewardStateUpdate returns(bool) {
         address user = msg.sender;
         if(userIndex[user] != 0) revert Errors.AlreadyRegistered();
-        if(!delegationBoost.isApprovedForAll(user, address(this))) revert Errors.WardenNotOperator();
+        if(delegationBoost.allowance(user, address(this)) != MAX_UINT) revert Errors.WardenNotOperator();
 
         if(pricePerVote == 0) revert Errors.NullPrice();
         if(maxPerc > 10000) revert Errors.MaxPercTooHigh();
@@ -500,6 +503,49 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    function canDelegate(address delegator, uint256 amount) external view returns(bool) {
+        uint256 userMaxPercent = (offers[userIndex[delegator]]).maxPerc;
+
+        return _canDelegate(delegator, amount, userMaxPercent);
+    }
+
+    function canDelegatePercent(address delegator, uint256 percent) external view returns(bool) {
+        uint256 userMaxPercent = (offers[userIndex[delegator]]).maxPerc;
+
+        if(percent > userMaxPercent) return false;
+
+        uint256 amount = (votingEscrow.balanceOf(delegator) * percent) / MAX_PCT;
+
+        return _canDelegate(delegator, amount, userMaxPercent);
+    }
+
+    /**
+     * @notice Gives an estimate of fees to pay for a given Boost Delegation
+     * @dev Calculates the amount of fees for a Boost Delegation with the given amount (through the percent) and the duration
+     * @param delegator Address of the delegator for the Boost
+     * @param amount Amount ot delegate
+     * @param duration Duration (in weeks) of the Boost to purchase
+     */
+    function estimateFees(
+        address delegator,
+        uint256 amount,
+        uint256 duration //in weeks
+    ) external view returns (uint256) {
+        if(delegator == address(0)) revert Errors.ZeroAddress();
+        if(userIndex[delegator] == 0) revert Errors.NotRegistered();
+
+        uint256 percent = (amount * MAX_PCT) / votingEscrow.balanceOf(delegator);
+
+        BoostOffer storage offer = offers[userIndex[delegator]];
+        if(percent < minPercRequired) revert Errors.PercentUnderMinRequired();
+        if(percent > MAX_PCT) revert Errors.PercentOverMax();
+
+        if(percent < offer.minPerc || percent > offer.maxPerc) 
+            revert Errors.PercentOutOfferBonds();
+
+        return _estimateFees(delegator, amount, duration);
+    }
+
     /**
      * @notice Gives an estimate of fees to pay for a given Boost Delegation
      * @dev Calculates the amount of fees for a Boost Delegation with the given amount (through the percent) and the duration
@@ -507,7 +553,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param percent Percent of the delegator balance to delegate (in BPS)
      * @param duration Duration (in weeks) of the Boost to purchase
      */
-    function estimateFees(
+    function estimateFeesPercent(
         address delegator,
         uint256 percent,
         uint256 duration //in weeks
@@ -520,53 +566,44 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Fetch the BoostOffer for the delegator
         BoostOffer storage offer = offers[userIndex[delegator]];
 
-        //Check that the duration is less or equal to Offer maxDuration
-        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
-        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
-        // Get the duration in seconds, and check it's more than the minimum required
-        uint256 durationSeconds = duration * 1 weeks;
-        if(durationSeconds < minDelegationTime) revert Errors.DurationTooShort();
-
         if(percent < offer.minPerc || percent > offer.maxPerc) 
             revert Errors.PercentOutOfferBonds();
 
-        uint256 expiryTime = ((block.timestamp + durationSeconds) / WEEK) * WEEK;
-        expiryTime = (expiryTime < block.timestamp + durationSeconds) ?
-            ((block.timestamp + durationSeconds + WEEK) / WEEK) * WEEK :
-            expiryTime;
-        if(expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
+        uint256 amount = (votingEscrow.balanceOf(delegator) * percent) / MAX_PCT;
 
-        // Find how much of the delegator's tokens the given percent represents
-        uint256 delegatorBalance = votingEscrow.balanceOf(delegator);
-        uint256 toDelegateAmount = (delegatorBalance * percent) / MAX_PCT;
-
-        //Should we use the Offer price or the advised one
-        uint256 pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
-
-        // Get the price for the whole Amount (price fer second)
-        uint256 priceForAmount = (toDelegateAmount * pricePerVote) / UNIT;
-
-        // Then multiply it by the duration (in seconds) to get the cost of the Boost
-        return priceForAmount * durationSeconds;
+        return _estimateFees(delegator, amount, duration);
     }
 
-    /** 
-        All local variables used in the buyDelegationBoost function
+    /**
+     * @notice Buy a Delegation Boost for a Delegator Offer
+     * @dev If all parameters match the offer from the delegator, creates a Boost for the caller
+     * @param delegator Address of the delegator for the Boost
+     * @param receiver Address of the receiver of the Boost
+     * @param amount  Amount to delegate
+     * @param duration Duration (in weeks) of the Boost to purchase
+     * @param maxFeeAmount Maximum amount of feeToken available to pay to cover the Boost Duration (in wei)
+     * returns the id of the new veBoost
      */
-    struct BuyVars {
-        uint256 boostDuration;
-        uint256 delegatorBalance;
-        uint256 toDelegateAmount;
-        uint256 pricePerVote;
-        uint256 realFeeAmount;
-        uint256 expiryTime;
-        uint256 cancelTime;
-        uint256 boostPercent;
-        uint256 newId;
-        uint256 newTokenId;
-        uint256 currentPeriod;
-        uint256 currentRewardIndex;
-        uint256 boostWeeklyDecrease;
+    function buyDelegationBoost(
+        address delegator,
+        address receiver,
+        uint256 amount,
+        uint256 duration, //in weeks
+        uint256 maxFeeAmount
+    ) external nonReentrant whenNotPaused rewardStateUpdate returns(uint256) {
+        if(delegator == address(0) || receiver == address(0)) revert Errors.ZeroAddress();
+        if(userIndex[delegator] == 0) revert Errors.NotRegistered();
+        if(maxFeeAmount == 0) revert Errors.NullFees();
+        if(amount == 0) revert Errors.NullValue();
+
+        uint256 percent = (amount * MAX_PCT) / votingEscrow.balanceOf(delegator);
+
+        BoostOffer storage offer = offers[userIndex[delegator]];
+        if(percent < minPercRequired) revert Errors.PercentUnderMinRequired();
+        if(percent > MAX_PCT) revert Errors.PercentOverMax();
+        if(percent < offer.minPerc || percent > offer.maxPerc) revert Errors.PercentOutOfferBonds();
+
+        return _buyDelegationBoost(delegator, receiver, amount, duration, maxFeeAmount);
     }
 
     /**
@@ -579,7 +616,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param maxFeeAmount Maximum amount of feeToken available to pay to cover the Boost Duration (in wei)
      * returns the id of the new veBoost
      */
-    function buyDelegationBoost(
+    function buyDelegationBoostPercent(
         address delegator,
         address receiver,
         uint256 percent,
@@ -592,170 +629,12 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(percent < minPercRequired) revert Errors.PercentUnderMinRequired();
         if(percent > MAX_PCT) revert Errors.PercentOverMax();
 
-        BuyVars memory vars;
-
-        // Fetch the BoostOffer for the delegator
         BoostOffer storage offer = offers[userIndex[delegator]];
-
-        //Check that the duration is less or equal to Offer maxDuration
-        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
-        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
-
-        // Get the duration of the wanted Boost in seconds
-        vars.boostDuration = duration * 1 weeks;
-        if(vars.boostDuration < minDelegationTime) revert Errors.DurationTooShort();
-
         if(percent < offer.minPerc || percent > offer.maxPerc) revert Errors.PercentOutOfferBonds();
 
-        // Find how much of the delegator's tokens the given percent represents
-        vars.delegatorBalance = votingEscrow.balanceOf(delegator);
-        vars.toDelegateAmount = (vars.delegatorBalance * percent) / MAX_PCT;
+        uint256 amount = (votingEscrow.balanceOf(delegator) * percent) / MAX_PCT;
 
-        // Check if delegator can delegate the amount, without exceeding the maximum percent allowed by the delegator
-        // _canDelegate will also try to cancel expired Boosts of the deelgator to free more tokens for delegation
-        if(!_canDelegate(delegator, vars.toDelegateAmount, offer.maxPerc)) revert Errors.CannotDelegate();
-
-        //Should we use the Offer price or the advised one
-        vars.pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
-
-        // Calculate the price for the given duration, get the real amount of fees to pay,
-        // and check the maxFeeAmount provided (and approved beforehand) is enough.
-        // Calculated using the pricePerVote set by the delegator
-        vars.realFeeAmount = (vars.toDelegateAmount * vars.pricePerVote * vars.boostDuration) / UNIT;
-        if(vars.realFeeAmount > maxFeeAmount) revert Errors.FeesTooLow();
-
-        // Pull the tokens from the buyer, setting it as earned fees for the delegator (and part of it for the Reserve)
-        _pullFees(msg.sender, vars.realFeeAmount, delegator);
-
-        // Calcualte the expiry time for the Boost = now + duration
-        vars.expiryTime = ((block.timestamp + vars.boostDuration) / WEEK) * WEEK;
-
-        // Hack needed because veBoost contract rounds down expire_time
-        // We don't want buyers to receive less than they pay for
-        // So an "extra" week is added if needed to get an expire_time covering the required duration
-        // But cancel_time will be set for the exact paid duration, so any "bonus days" received can be canceled
-        // if a new buyer wants to take the offer
-        vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
-            ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
-            vars.expiryTime;
-        if(vars.expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
-
-        // VotingEscrowDelegation needs the percent of available tokens for delegation when creating the boost, instead of
-        // the percent of the users balance. We calculate this percent representing the amount of tokens wanted by the buyer
-        vars.boostPercent = (vars.toDelegateAmount * MAX_PCT) / 
-            (vars.delegatorBalance - delegationBoost.delegated_boost(delegator));
-
-        // Get the id (depending on the delegator) for the new Boost
-        vars.newId = delegationBoost.total_minted(delegator);
-        unchecked {
-            // cancelTime stays current timestamp + paid duration
-            // Should not overflow : Since expiryTime is the same + some extra time, expiryTime >= cancelTime
-            vars.cancelTime = block.timestamp + vars.boostDuration;
-        }
-
-        // Creates the DelegationBoost
-        delegationBoost.create_boost(
-            delegator,
-            receiver,
-            int256(vars.boostPercent),
-            vars.cancelTime,
-            vars.expiryTime,
-            vars.newId
-        );
-
-        // Fetch the tokenId for the new DelegationBoost that was created, and check it was set for the correct delegator
-        vars.newTokenId = delegationBoost.get_token_id(delegator, vars.newId);
-        if(
-            vars.newTokenId !=
-                delegationBoost.token_of_delegator_by_index(delegator, vars.newId)
-        ) revert Errors.FailDelegationBoost();
-
-        // If rewards were started, otherwise no need to write for that Boost
-        if(nextUpdatePeriod != 0) { 
-
-            // Find the current reward index
-            vars.currentPeriod = currentPeriod();
-            vars.currentRewardIndex = periodRewardIndex[vars.currentPeriod] + (
-                (periodDropPerVote[vars.currentPeriod] * (block.timestamp - vars.currentPeriod)) / WEEK
-            );
-
-            // Add the amount purchased to the period purchased amount (& the decrease + decrease change)
-            vars.boostWeeklyDecrease = (vars.toDelegateAmount * WEEK) / (vars.expiryTime - block.timestamp);
-            uint256 nextPeriod = vars.currentPeriod + WEEK;
-            periodPurchasedAmount[vars.currentPeriod] += vars.toDelegateAmount;
-            periodEndPurchasedDecrease[vars.currentPeriod] += (vars.boostWeeklyDecrease * (nextPeriod - block.timestamp)) / WEEK;
-            periodPurchasedDecreaseChanges[nextPeriod] += (vars.boostWeeklyDecrease * (nextPeriod - block.timestamp)) / WEEK;
-
-            if(vars.expiryTime != (nextPeriod)){
-                periodEndPurchasedDecrease[nextPeriod] += vars.boostWeeklyDecrease;
-                periodPurchasedDecreaseChanges[vars.expiryTime] += vars.boostWeeklyDecrease;
-            }
-
-            // Write the Purchase for rewards
-            purchasedBoosts[vars.newTokenId] = PurchasedBoost(
-                vars.toDelegateAmount,
-                vars.currentRewardIndex,
-                uint128(block.timestamp),
-                uint128(vars.expiryTime),
-                receiver,
-                false
-            );
-            userPurchasedBoosts[receiver].push(vars.newTokenId);
-        }
-
-        emit BoostPurchase(
-            delegator,
-            receiver,
-            vars.newTokenId,
-            percent,
-            vars.pricePerVote,
-            vars.realFeeAmount,
-            vars.expiryTime
-        );
-
-        return vars.newTokenId;
-    }
-
-    /**
-     * @notice Cancels a DelegationBoost
-     * @dev Cancels a DelegationBoost :
-     * In case the caller is the owner of the Boost, at any time
-     * In case the caller is the delegator for the Boost, after cancel_time
-     * Else, after expiry_time
-     * @param tokenId Id of the DelegationBoost token to cancel
-     */
-    function cancelDelegationBoost(uint256 tokenId) external whenNotPaused rewardStateUpdate returns(bool) {
-        address tokenOwner = delegationBoost.ownerOf(tokenId);
-        // If the caller own the token, and this contract is operator for the owner
-        // we try to burn the token directly
-        if (
-            msg.sender == tokenOwner &&
-            delegationBoost.isApprovedForAll(tokenOwner, address(this))
-        ) {
-            delegationBoost.burn(tokenId);
-            return true;
-        }
-
-        uint256 currentTime = block.timestamp;
-
-        // Delegator can cancel the Boost if Cancel Time passed
-        address delegator = _getTokenDelegator(tokenId);
-        if (
-            delegationBoost.token_cancel_time(tokenId) < currentTime &&
-            (msg.sender == delegator &&
-                delegationBoost.isApprovedForAll(delegator, address(this)))
-        ) {
-            delegationBoost.cancel_boost(tokenId);
-            return true;
-        }
-
-        // Else, we wait Exipiry Time, so anyone can cancel the delegation
-        if (delegationBoost.token_expiry(tokenId) < currentTime) {
-            delegationBoost.cancel_boost(tokenId);
-            return true;
-        }
-
-        revert Errors.CannotCancelBoost();
+        return _buyDelegationBoost(delegator, receiver, amount, duration, maxFeeAmount);
     }
 
     /**
@@ -774,26 +653,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function claim() external nonReentrant rewardStateUpdate returns(bool) {
         if(earnedFees[msg.sender] == 0) revert Errors.NullClaimAmount();
         return _claim(msg.sender, earnedFees[msg.sender]);
-    }
-
-    /**
-     * @notice Claims all earned fees, and cancel all expired Delegation Boost for the user
-     * @dev Send all the user's earned fees, and fetch all expired Boosts to cancel them
-     */
-    function claimAndCancel() external nonReentrant rewardStateUpdate returns(bool) {
-        _cancelAllExpired(msg.sender);
-        return _claim(msg.sender, earnedFees[msg.sender]);
-    }
-
-    /**
-     * @notice Claims an amount of earned fees through Boost Delegation selling
-     * @dev Send the given amount of earned fees (if amount is correct)
-     * @param amount Amount of earned fees to claim
-     */
-    function claim(uint256 amount) external nonReentrant rewardStateUpdate returns(bool) {
-        if(amount > earnedFees[msg.sender]) revert Errors.AmountTooHigh();
-        if(amount == 0) revert Errors.NullClaimAmount();
-        return _claim(msg.sender, amount);
     }
 
     /**
@@ -820,7 +679,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param boostId Id of the veBoost
      */
     function getBoostReward(uint256 boostId) external view returns(uint256) {
-        if(boostId == 0) revert Errors.InvalidBoostId();
+        if(boostId >= nextBoostId) revert Errors.InvalidBoostId();
         return _getBoostRewardAmount(boostId);
     }
 
@@ -830,7 +689,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param boostId Id of the veBoost
      */
     function claimBoostReward(uint256 boostId) external nonReentrant rewardStateUpdate returns(bool) {
-        if(boostId == 0) revert Errors.InvalidBoostId();
+        if(boostId >= nextBoostId) revert Errors.InvalidBoostId();
         return _claimBoostRewards(boostId);
     }
 
@@ -842,13 +701,168 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function claimMultipleBoostReward(uint256[] calldata boostIds) external nonReentrant rewardStateUpdate returns(bool) {
         uint256 length = boostIds.length;
         for(uint256 i; i < length;) {
-            if(boostIds[i] == 0) revert Errors.InvalidBoostId();
+            if(boostIds[i] >= nextBoostId) revert Errors.InvalidBoostId();
             require(_claimBoostRewards(boostIds[i]));
 
             unchecked{ ++i; }
         }
 
         return true;
+    }
+
+    function _estimateFees(
+        address delegator,
+        uint256 amount,
+        uint256 duration //in weeks
+    ) internal view returns (uint256) {
+        // Fetch the BoostOffer for the delegator
+        BoostOffer storage offer = offers[userIndex[delegator]];
+
+        //Check that the duration is less or equal to Offer maxDuration
+        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
+        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
+        // Get the duration in seconds, and check it's more than the minimum required
+        uint256 boostDuration = duration * WEEK;
+        if(boostDuration < minDelegationTime) revert Errors.DurationTooShort();
+
+        uint256 expiryTime = ((block.timestamp + boostDuration) / WEEK) * WEEK;
+        expiryTime = (expiryTime < block.timestamp + boostDuration) ?
+            ((block.timestamp + boostDuration + WEEK) / WEEK) * WEEK :
+            expiryTime;
+        if(expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
+        // Real Boost duration (for fees)
+        boostDuration = expiryTime - block.timestamp;
+
+        //Should we use the Offer price or the advised one
+        uint256 pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
+
+        // Return estimated max price for the whole Boost duration at this block
+        return (amount * pricePerVote * boostDuration) / UNIT;
+    }
+
+    struct BuyVars {
+        uint256 boostDuration;
+        uint256 expiryTime;
+        uint256 pricePerVote;
+        uint256 realFeeAmount;
+        uint256 newTokenId;
+        uint256 currentPeriod;
+        uint256 currentRewardIndex;
+        uint256 boostWeeklyDecrease;
+        uint256 nextPeriod;
+    }
+
+    function _buyDelegationBoost(
+        address delegator,
+        address receiver,
+        uint256 amount,
+        uint256 duration, //in weeks
+        uint256 maxFeeAmount
+    ) internal returns(uint256) {
+
+        BuyVars memory vars;
+
+        // Fetch the BoostOffer for the delegator
+        BoostOffer storage offer = offers[userIndex[delegator]];
+
+        //Check that the duration is less or equal to Offer maxDuration
+        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
+        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
+
+        // Get the duration of the wanted Boost in seconds
+        vars.boostDuration = duration * WEEK;
+        if(vars.boostDuration < minDelegationTime) revert Errors.DurationTooShort();
+
+        // Calcualte the expiry time for the Boost = now + duration
+        vars.expiryTime = ((block.timestamp + vars.boostDuration) / WEEK) * WEEK;
+
+        // Hack needed because veBoost contract rounds down expire_time
+        // We don't want buyers to receive less than they pay for
+        // So an "extra" week is added if needed to get an expire_time covering the required duration
+        // But cancel_time will be set for the exact paid duration, so any "bonus days" received can be canceled
+        // if a new buyer wants to take the offer
+        vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
+            ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
+            vars.expiryTime;
+        if(vars.expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
+        // Real Boost duration (for fees)
+        vars.boostDuration = vars.expiryTime - block.timestamp;
+
+        // Check if delegator can delegate the amount, without exceeding the maximum percent allowed by the delegator
+        // _canDelegate will also try to cancel expired Boosts of the deelgator to free more tokens for delegation
+        delegationBoost.checkpoint_user(delegator);
+        if(!_canDelegate(delegator, amount, offer.maxPerc)) revert Errors.CannotDelegate();
+
+        //Should we use the Offer price or the advised one
+        vars.pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
+
+        // Calculate the price for the given duration, get the real amount of fees to pay,
+        // and check the maxFeeAmount provided (and approved beforehand) is enough.
+        // Calculated using the pricePerVote set by the delegator
+        vars.realFeeAmount = (amount * vars.pricePerVote * vars.boostDuration) / UNIT;
+        if(vars.realFeeAmount > maxFeeAmount) revert Errors.FeesTooLow();
+
+        // Pull the tokens from the buyer, setting it as earned fees for the delegator (and part of it for the Reserve)
+        _pullFees(msg.sender, vars.realFeeAmount, delegator);
+
+        // Get the id for the new Boost
+        vars.newTokenId = nextBoostId;
+        nextBoostId++;
+
+        // Creates the DelegationBoost
+        delegationBoost.boost(
+            receiver,
+            amount,
+            vars.expiryTime,
+            delegator
+        );
+
+
+        // If rewards were started, otherwise no need to write for that Boost
+        if(nextUpdatePeriod != 0) { 
+
+            // Find the current reward index
+            vars.currentPeriod = currentPeriod();
+            vars.currentRewardIndex = periodRewardIndex[vars.currentPeriod] + (
+                (periodDropPerVote[vars.currentPeriod] * (block.timestamp - vars.currentPeriod)) / WEEK
+            );
+
+            // Add the amount purchased to the period purchased amount (& the decrease + decrease change)
+            vars.boostWeeklyDecrease = (amount * WEEK) / vars.boostDuration;
+            vars.nextPeriod = vars.currentPeriod + WEEK;
+            periodPurchasedAmount[vars.currentPeriod] += amount;
+            periodEndPurchasedDecrease[vars.currentPeriod] += (vars.boostWeeklyDecrease * (vars.nextPeriod - block.timestamp)) / WEEK;
+            periodPurchasedDecreaseChanges[vars.nextPeriod] += (vars.boostWeeklyDecrease * (vars.nextPeriod - block.timestamp)) / WEEK;
+
+            if(vars.expiryTime != vars.nextPeriod){
+                periodEndPurchasedDecrease[vars.nextPeriod] += vars.boostWeeklyDecrease;
+                periodPurchasedDecreaseChanges[vars.expiryTime] += vars.boostWeeklyDecrease;
+            }
+
+            // Write the Purchase for rewards
+            purchasedBoosts[vars.newTokenId] = PurchasedBoost(
+                amount,
+                vars.currentRewardIndex,
+                uint128(block.timestamp),
+                uint128(vars.expiryTime),
+                receiver,
+                false
+            );
+            userPurchasedBoosts[receiver].push(vars.newTokenId);
+        }
+
+        emit BoostPurchase(
+            delegator,
+            receiver,
+            vars.newTokenId,
+            amount,
+            vars.pricePerVote,
+            vars.realFeeAmount,
+            vars.expiryTime
+        );
+
+        return vars.newTokenId;
+
     }
 
     function _pullFees(
@@ -864,130 +878,31 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         reserveAmount += (amount * feeReserveRatio) / MAX_PCT;
     }
 
-    struct CanDelegateVars {
-        uint256 balance;
-        uint256 blockedBalance;
-        uint256 availableBalance;
-        uint256 nbTokens;
-        uint256 delegatedBalance;
-        uint256 potentialCancelableBalance;
-    }
-
     function _canDelegate(
         address delegator,
         uint256 amount,
         uint256 delegatorMaxPerc
-    ) internal returns (bool) {
-        if (!delegationBoost.isApprovedForAll(delegator, address(this)))
+    ) internal view returns (bool) {
+        // Handles both the case where user just approved a given amount to this contract
+        // or approved for the MAX_UINT256 (which is the easiest setting in our case)
+        if (delegationBoost.allowance(delegator, address(this)) < amount)
             return false;
 
-        CanDelegateVars memory vars;
-
         // Delegator current balance
-        vars.balance = votingEscrow.balanceOf(delegator);
+        uint256 balance = votingEscrow.balanceOf(delegator);
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
-        vars.blockedBalance = (vars.balance * (MAX_PCT - delegatorMaxPerc)) / MAX_PCT;
+        uint256 blockedBalance = (balance * (MAX_PCT - delegatorMaxPerc)) / MAX_PCT;
+        uint256 delegatableBalance = delegationBoost.delegable_balance(delegator);
+
+        if(delegatableBalance < blockedBalance) return false;
 
         // Available Balance to delegate = VotingEscrow Balance - Blocked Balance
-        vars.availableBalance = vars.balance - vars.blockedBalance;
+        uint256 availableBalance = delegatableBalance - blockedBalance;
 
-        vars.nbTokens = delegationBoost.total_minted(delegator);
-        uint256[256] memory expiredBoosts; //Need this type of array because of batch_cancel_boosts() from veBoost
-        uint256 nbExpired = 0;
-
-        // Loop over the delegator current boosts to find expired ones
-        for (uint256 i = 0; i < vars.nbTokens;) {
-            uint256 tokenId = delegationBoost.token_of_delegator_by_index(
-                delegator,
-                i
-            );
-
-            // If boost expired
-            if (delegationBoost.token_expiry(tokenId) < block.timestamp) {
-                expiredBoosts[nbExpired] = tokenId;
-                nbExpired++;
-            }
-
-            unchecked{ ++i; }
-        }
-        
-        if (nbExpired > 0) {
-            delegationBoost.batch_cancel_boosts(expiredBoosts);
-        }
-
-        // Then need to check what is the amount currently delegated out of the Available Balance
-        vars.delegatedBalance = delegationBoost.delegated_boost(delegator);
-
-        if(vars.availableBalance > vars.delegatedBalance){
-            if(amount <= (vars.availableBalance - vars.delegatedBalance)) return true;
-        }
-
-        // Check if cancel expired Boosts could bring enough to delegate
-        vars.potentialCancelableBalance = 0;
-
-        uint256[256] memory toCancel; //Need this type of array because of batch_cancel_boosts() from veBoost
-        uint256 nbToCancel = 0;
-
-        // Loop over the delegator current boosts to find potential cancelable ones
-        for (uint256 i = 0; i < vars.nbTokens;) {
-            uint256 tokenId = delegationBoost.token_of_delegator_by_index(
-                delegator,
-                i
-            );
-
-            if (delegationBoost.token_cancel_time(tokenId) <= block.timestamp && delegationBoost.token_cancel_time(tokenId) != 0) {
-                int256 boost = delegationBoost.token_boost(tokenId);
-                uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
-                vars.potentialCancelableBalance += absolute_boost;
-                toCancel[nbToCancel] = tokenId;
-                nbToCancel++;
-            }
-
-            unchecked{ ++i; }
-        }
-
-        // If the current Boosts are more than the availableBalance => No balance available for a new Boost
-        if (vars.availableBalance < (vars.delegatedBalance - vars.potentialCancelableBalance)) return false;
-        // If canceling the tokens can free enough to delegate,
-        // cancel the batch and return true
-        if (amount <= (vars.availableBalance - (vars.delegatedBalance - vars.potentialCancelableBalance)) && nbToCancel > 0) {
-            delegationBoost.batch_cancel_boosts(toCancel);
-            return true;
-        }
+        if (amount <= availableBalance) return true;
 
         return false;
-    }
-
-    function _cancelAllExpired(address delegator) internal {
-        uint256 nbTokens = delegationBoost.total_minted(delegator);
-        // Delegator does not have active Boosts currently
-        if (nbTokens == 0) return;
-
-        uint256[256] memory toCancel;
-        uint256 nbToCancel = 0;
-        uint256 currentTime = block.timestamp;
-
-        // Loop over the delegator current boosts to find expired ones
-        for (uint256 i = 0; i < nbTokens;) {
-            uint256 tokenId = delegationBoost.token_of_delegator_by_index(
-                delegator,
-                i
-            );
-            uint256 cancelTime = delegationBoost.token_cancel_time(tokenId);
-
-            if (cancelTime <= currentTime && cancelTime != 0) {
-                toCancel[nbToCancel] = tokenId;
-                nbToCancel++;
-            }
-
-            unchecked{ ++i; }
-        }
-
-        // If Boost were found, cancel the batch
-        if (nbToCancel > 0) {
-            delegationBoost.batch_cancel_boosts(toCancel);
-        }
     }
 
     function _claim(address user, uint256 amount) internal returns(bool) {
@@ -1089,15 +1004,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         emit ClaimReward(boostId, msg.sender, rewardAmount);
 
         return true;
-    }
-
-    function _getTokenDelegator(uint256 tokenId)
-        internal
-        pure
-        returns (address)
-    {
-        //Extract the address from the token id : See VotingEscrowDelegation.vy for the logic
-        return address(uint160(tokenId >> 96));
     }
 
     // Manager methods:
@@ -1210,7 +1116,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param newDelegationBoost New veBoost contract address
      */
     function setDelegationBoost(address newDelegationBoost) external onlyOwner {
-        delegationBoost = IVotingEscrowDelegation(newDelegationBoost);
+        delegationBoost = IBoostV2(newDelegationBoost);
     }
 
     /**

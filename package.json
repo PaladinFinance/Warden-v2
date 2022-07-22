@@ -6,10 +6,11 @@
   "scripts": {
     "build": "npm run clean && npm run compile",
     "clean": "npx hardhat clean",
-    "compile": "npx hardhat compile",
+    "compile": "npx hardhat compile --no-typechain && npx hardhat typechain",
     "test": "npx hardhat test",
     "coverage": "npx hardhat coverage --network hardhat --solcoverjs .solcover.js",
     "deploy": "npx hardhat run --network mainnet",
+    "deploy_fork": "npx hardhat run --network fork",
     "setup-foundry": "foundryup && forge install",
     "test-fuzz": "forge test -vv"
   },
