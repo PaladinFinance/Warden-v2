@@ -134,7 +134,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice List of the Boost purchased by an user */
     mapping(address => uint256[]) public userPurchasedBoosts;
 
-    uint256 public nextBoostId;
+    uint256 public nextBoostId = 1; // because we use ID 0 as an invalid one in the MultiBuy system
     
     /** @notice Reward token to distribute to buyers */
     IERC20 public rewardToken;

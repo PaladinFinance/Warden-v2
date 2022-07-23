@@ -6,7 +6,8 @@ module.exports = {
       './interfaces',
       './oz',
       './test',
-      './utils'
+      './utils',
+      'WardenLens.sol'
     ],
     mocha: {
       fgrep: "[skip-on-coverage]",
