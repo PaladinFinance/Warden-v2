@@ -10,7 +10,7 @@ import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IBoostV2.sol";
 import "./utils/Errors.sol";
 
-/** @title Warden contract  */
+/** @title Warden contract V2 */
 /// @author Paladin
 /*
     Delegation market based on Curve VotingEscrowDelegation contract
@@ -134,6 +134,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice List of the Boost purchased by an user */
     mapping(address => uint256[]) public userPurchasedBoosts;
 
+    /** @notice ID for the next purchased Boost */
     uint256 public nextBoostId = 1; // because we use ID 0 as an invalid one in the MultiBuy system
     
     /** @notice Reward token to distribute to buyers */
@@ -179,6 +180,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param _delegationBoost address of the contract handling delegation
      * @param _feeReserveRatio Percent of fees to be set as Reserve (bps)
      * @param _minPercRequired Minimum percent of user
+     * @param _advisedPrice Starting advised price
      */
     constructor(
         address _feeToken,
@@ -503,12 +505,24 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * @notice Checks if the delegator has enough available balance & the Offer allows to delegate the given amount
+     * @dev Checks if the delegator has enough available balance & the Offer allows to delegate the given amount
+     * @param delegator Address of the delegator for the Boost
+     * @param amount Amount ot delegate
+     */
     function canDelegate(address delegator, uint256 amount) external view returns(bool) {
         uint256 userMaxPercent = (offers[userIndex[delegator]]).maxPerc;
 
         return _canDelegate(delegator, amount, userMaxPercent);
     }
 
+    /**
+     * @notice Checks if the delegator has enough available balance & the Offer allows to delegate the given amount
+     * @dev Checks if the delegator has enough available balance & the Offer allows to delegate the given amount
+     * @param delegator Address of the delegator for the Boost
+     * @param percent Percent of the delegator balance to delegate (in BPS)
+     */
     function canDelegatePercent(address delegator, uint256 percent) external view returns(bool) {
         uint256 userMaxPercent = (offers[userIndex[delegator]]).maxPerc;
 
@@ -725,6 +739,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 boostDuration = duration * WEEK;
         if(boostDuration < minDelegationTime) revert Errors.DurationTooShort();
 
+        // Because the BoostV2 expects end_timestamps to be rounded by week,
+        // and we want to round up instead of down (so user purchasing the minimal duration (1 week)
+        // have at least than minimal duration). Since the Boost cannot be canceled, we expect the user to pay
+        // for the effective duration of the boost
         uint256 expiryTime = ((block.timestamp + boostDuration) / WEEK) * WEEK;
         expiryTime = (expiryTime < block.timestamp + boostDuration) ?
             ((block.timestamp + boostDuration + WEEK) / WEEK) * WEEK :
@@ -733,7 +751,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Real Boost duration (for fees)
         boostDuration = expiryTime - block.timestamp;
 
-        //Should we use the Offer price or the advised one
+        // Choose between the Offer price or the advised one based on delegator choice
         uint256 pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
 
         // Return estimated max price for the whole Boost duration at this block
@@ -776,11 +794,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Calcualte the expiry time for the Boost = now + duration
         vars.expiryTime = ((block.timestamp + vars.boostDuration) / WEEK) * WEEK;
 
-        // Hack needed because veBoost contract rounds down expire_time
+        // Hack needed because veBoost contract expects end_timestamp rounded by week
         // We don't want buyers to receive less than they pay for
         // So an "extra" week is added if needed to get an expire_time covering the required duration
-        // But cancel_time will be set for the exact paid duration, so any "bonus days" received can be canceled
-        // if a new buyer wants to take the offer
+        // Because the BoostOffer V2 does not allow to cancel Boosts, we expect the user to pay
+        // for the effective duration of the boost
         vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
             ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
             vars.expiryTime;
@@ -793,12 +811,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         delegationBoost.checkpoint_user(delegator);
         if(!_canDelegate(delegator, amount, offer.maxPerc)) revert Errors.CannotDelegate();
 
-        //Should we use the Offer price or the advised one
+        // Choose between the Offer price or the advised one based on delegator choice
         vars.pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
 
         // Calculate the price for the given duration, get the real amount of fees to pay,
         // and check the maxFeeAmount provided (and approved beforehand) is enough.
-        // Calculated using the pricePerVote set by the delegator
         vars.realFeeAmount = (amount * vars.pricePerVote * vars.boostDuration) / UNIT;
         if(vars.realFeeAmount > maxFeeAmount) revert Errors.FeesTooLow();
 
@@ -893,12 +910,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
         uint256 blockedBalance = (balance * (MAX_PCT - delegatorMaxPerc)) / MAX_PCT;
-        uint256 delegatableBalance = delegationBoost.delegable_balance(delegator);
+        uint256 delegableBalance = delegationBoost.delegable_balance(delegator);
 
-        if(delegatableBalance < blockedBalance) return false;
+        // If the current delegableBalance is the the part of the balance not allowed for this market
+        if(delegableBalance < blockedBalance) return false;
 
-        // Available Balance to delegate = VotingEscrow Balance - Blocked Balance
-        uint256 availableBalance = delegatableBalance - blockedBalance;
+        // Available Balance to delegate = Current Undelegated Balance - Blocked Balance
+        uint256 availableBalance = delegableBalance - blockedBalance;
 
         if (amount <= availableBalance) return true;
 

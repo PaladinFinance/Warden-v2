@@ -59,8 +59,6 @@ contract WardenMultiBuy is Ownable {
 
 
     struct MultiBuyVars {
-        // Duration of the Boosts on weeks
-        uint256 weeksDuration;
         // Duration of the Boosts in seconds
         uint256 boostDuration;
         // Total count of Offers in the Warden Offer List
@@ -131,20 +129,21 @@ contract WardenMultiBuy is Ownable {
         MultiBuyVars memory vars;
 
         // Calculate the duration of veBoosts to purchase
-        // & the mex total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
         vars.boostDuration = duration * 1 weeks;
         if(vars.boostDuration < warden.minDelegationTime()) revert Errors.DurationTooShort();
-        if(((boostAmount * maxPrice * vars.boostDuration) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Fetch the total number of Offers to loop over
         vars.totalNbOffers = warden.offersIndex();
 
         // Calculate the expiryTime of veBoosts to create (used for later check over Seller veCRV lock__end)
+        // For detailed explanation, see Warden _buyDelegationBoost() comments
         vars.boostEndTime = block.timestamp + vars.boostDuration;
         vars.expiryTime = (vars.boostEndTime / WEEK) * WEEK;
         vars.expiryTime = (vars.expiryTime < vars.boostEndTime)
             ? ((vars.boostEndTime + WEEK) / WEEK) * WEEK
             : vars.expiryTime;
+        // Check the max total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
+        if(((boostAmount * maxPrice * (vars.expiryTime - block.timestamp)) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Get the current fee token balance of this contract
         vars.previousBalance = feeToken.balanceOf(address(this));
@@ -322,21 +321,21 @@ contract WardenMultiBuy is Ownable {
         MultiBuyVars memory vars;
 
         // Calculate the duration of veBoosts to purchase
-        // & the mex total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
         vars.boostDuration = duration * 1 weeks;
-        vars.weeksDuration = duration;
         if(vars.boostDuration < warden.minDelegationTime()) revert Errors.DurationTooShort();
-        if(((boostAmount * maxPrice * vars.boostDuration) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Fetch the total number of Offers to loop over
         if(sortedOfferIndexes.length == 0) revert Errors.EmptyArray();
 
         // Calculate the expiryTime of veBoosts to create (used for later check over Seller veCRV lock__end)
+        // For detailed explanation, see Warden _buyDelegationBoost() comments
         vars.boostEndTime = block.timestamp + vars.boostDuration;
         vars.expiryTime = (vars.boostEndTime / WEEK) * WEEK;
         vars.expiryTime = (vars.expiryTime < vars.boostEndTime)
             ? ((vars.boostEndTime + WEEK) / WEEK) * WEEK
             : vars.expiryTime;
+        // Check the max total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
+        if(((boostAmount * maxPrice * (vars.expiryTime - block.timestamp)) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Get the current fee token balance of this contract
         vars.previousBalance = feeToken.balanceOf(address(this));
@@ -403,7 +402,7 @@ contract WardenMultiBuy is Ownable {
             } 
 
             // Purchase the Boost, retrieve the tokenId
-            varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.toBuyAmount, vars.weeksDuration, varsOffer.boostFeeAmount);
+            varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.toBuyAmount, duration, varsOffer.boostFeeAmount);
 
             // New tokenId should never be 0, if we receive a null ID, purchase failed
             if(varsOffer.newTokenId == 0) revert Errors.FailBoostPurchase();
@@ -511,18 +510,20 @@ contract WardenMultiBuy is Ownable {
         if (expiryTime >= votingEscrow.locked__end(delegator)) return 0;
 
         uint256 userBalance = votingEscrow.balanceOf(delegator);
-        uint256 delegatableBalance = delegationBoost.delegable_balance(delegator);
+        uint256 delegableBalance = delegationBoost.delegable_balance(delegator);
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
         uint256 blockedBalance = (userBalance * (MAX_PCT - maxPerc)) / MAX_PCT;
-        if(delegatableBalance < blockedBalance) return 0;
+        // If the current delegableBalance is the the part of the balance not allowed for this market
+        if(delegableBalance < blockedBalance) return 0;
 
-        uint256 availableBalance = delegatableBalance - blockedBalance;
+        // Available Balance to delegate = Current Undelegated Balance - Blocked Balance
+        uint256 availableBalance = delegableBalance - blockedBalance;
 
         // Minmum amount of veCRV for the boost for this Offer
         uint256 minBoostAmount = (userBalance * minPerc) / MAX_PCT;
 
-        if(delegatableBalance >= minBoostAmount) {
+        if(delegableBalance >= minBoostAmount) {
             // Warden cannot create the Boost
             if (delegationBoost.allowance(delegator, address(warden)) < availableBalance) return 0;
 
