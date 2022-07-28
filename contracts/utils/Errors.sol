@@ -11,6 +11,7 @@ library Errors {
     error ZeroAddress();
     error NullValue();
     error InvalidValue();
+    error InequalArraySizes();
 
     // Update Errors
     error FailRewardUpdate();
@@ -68,6 +69,9 @@ library Errors {
     error ReserveTooLow();
     error BaseDropTooLow();
     error MinDropTooHigh();
+    error AlreadyAllowedToken();
+    error NotAllowedToken();
+    error CannotRecoverToken();
 
     // MultiBuy Errors
     error NotEnoughFees();
