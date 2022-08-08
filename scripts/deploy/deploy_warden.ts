@@ -63,7 +63,8 @@ async function main() {
                 VOTING_ESCROW_ADDRESS,
                 DELEGATION_BOOST_ADDRESS,
                 FEE_RATIO,
-                MIN_PERCENT_REQUIRED
+                MIN_PERCENT_REQUIRED,
+                ADVISED_PRICE
             ],
         });
     }
