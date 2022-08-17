@@ -80,4 +80,26 @@ library Errors {
     error EmptyArray();
     error InvalidBoostOffer();
 
+    //PledgeErrors
+    error TokenNotWhitelisted();
+    error RewardPerVoteTooLow();
+    error TargetVoteUnderMin();
+    error IncorrectTotalRewardAmount();
+    error IncorrectFeeAmount();
+    error InvalidEndTimestemp();
+    error NotPledgeCreator();
+    error ExpiredPledge();
+    error PledgeNotExpired();
+    error PledgeClosed();
+    error PledgeAlreadyClosed();
+    error TargetVotesTooLoow();
+    error InvalidPledgeID();
+    error InvalidEndTimestamp();
+    error TargetVotesOverflow();
+    error RewardsBalanceTooLow();
+
+
+    // Math Errors
+    error NumberExceed64Bits();
+
 }
