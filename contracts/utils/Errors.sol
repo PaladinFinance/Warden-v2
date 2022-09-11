@@ -84,17 +84,18 @@ library Errors {
     error TokenNotWhitelisted();
     error RewardPerVoteTooLow();
     error TargetVoteUnderMin();
-    error IncorrectTotalRewardAmount();
-    error IncorrectFeeAmount();
-    error InvalidEndTimestemp();
+    error IncorrectMaxTotalRewardAmount();
+    error IncorrectMaxFeeAmount();
+    error InvalidEndTimestamp();
+    error NullEndTimestamp();
     error NotPledgeCreator();
     error ExpiredPledge();
     error PledgeNotExpired();
     error PledgeClosed();
     error PledgeAlreadyClosed();
     error TargetVotesTooLoow();
+    error RewardsPerVotesTooLow();
     error InvalidPledgeID();
-    error InvalidEndTimestamp();
     error TargetVotesOverflow();
     error RewardsBalanceTooLow();
 

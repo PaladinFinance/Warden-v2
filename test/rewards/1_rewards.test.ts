@@ -94,7 +94,7 @@ describe('Warden rewards tests', () => {
         await CRV.connect(delegator).approve(veCRV.address, 0);
         await CRV.connect(delegator).approve(veCRV.address, crv_amount);
         const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
+        const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         if (locked_balance.eq(0)) {
             await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
         } else if (locked_balance.lt(lock_amount)) {

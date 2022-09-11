@@ -142,7 +142,7 @@ describe('Warden rewards tests - part 3', () => {
         await CRV.connect(delegator7).approve(veCRV.address, ethers.utils.parseEther('500'));
         await CRV.connect(delegator8).approve(veCRV.address, ethers.utils.parseEther('175'));
 
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
+        const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
 
         await veCRV.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);

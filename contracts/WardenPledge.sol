@@ -15,7 +15,7 @@ import "./utils/Errors.sol";
 /*
     Delegation market (Pledge version) based on Curve Boost V2 contract
 */
-contract WardenX is Ownable, Pausable, ReentrancyGuard {
+contract WardenPledge is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Constants :
@@ -66,9 +66,6 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
 
     uint256 public minTargetVotes;
 
-    /** @notice Min Percent of delegator votes to buy required to purchase a Delegation Boost (in BPS) */
-    uint256 public minPercRequired; //bps
-
     /** @notice Minimum delegation time, taken from veBoost contract */
     uint256 public minDelegationTime = 1 weeks;
 
@@ -86,7 +83,7 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
     event ExtendPledgeDuration(uint256 indexed pledgeId, uint256 oldEndTimestamp, uint256 newEndTimestamp);
     event IncreasePledgeTargetVotes(uint256 indexed pledgeId, uint256 oldTargetVotes, uint256 newTargetVotes);
     event IncreasePledgeRewardPerVote(uint256 indexed pledgeId, uint256 oldRewardPerVote, uint256 newRewardPerVote);
-    event CanceledPledge(uint256 indexed pledgeId);
+    event ClosePledge(uint256 indexed pledgeId);
     event RetrievedPledgeRewards(uint256 indexed pledgeId, address receiver, uint256 amount);
 
     event Pledged(uint256 indexed pledgeId, address indexed user, uint256 amount, uint256 endTimestamp);
@@ -112,10 +109,13 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
     constructor(
         address _votingEscrow,
         address _delegationBoost,
+        address _chestAddress,
         uint256 _minTargetVotes
     ) {
         votingEscrow = IVotingEscrow(_votingEscrow);
         delegationBoost = IBoostV2(_delegationBoost);
+
+        chestAddress = _chestAddress;
 
         minTargetVotes = _minTargetVotes;
     }
@@ -146,11 +146,11 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
 
     // Pledgers Methods
 
-    function pledge(uint256 pledgeId, uint256 amount, uint256 endTimestamp) external nonReentrant {
+    function pledge(uint256 pledgeId, uint256 amount, uint256 endTimestamp) external whenNotPaused nonReentrant {
         _pledge(pledgeId, msg.sender, amount, endTimestamp);
     }
 
-    function pledgePercent(uint256 pledgeId, uint256 percent, uint256 endTimestamp) external nonReentrant {
+    function pledgePercent(uint256 pledgeId, uint256 percent, uint256 endTimestamp) external whenNotPaused nonReentrant {
         if(percent > MAX_PCT) revert Errors.PercentOverMax();
 
         uint256 amount = (votingEscrow.balanceOf(msg.sender) * percent) / MAX_PCT;
@@ -161,13 +161,14 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
 
     function _pledge(uint256 pledgeId, address user, uint256 amount, uint256 endTimestamp) internal {
         if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
+        if(amount == 0) revert Errors.NullValue();
 
         Pledge memory pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
 
         // To join until the end of the pledge, user can input 0 as endTimestamp
-        // so it's override by the Pledge's endTimestemp
+        // so it's override by the Pledge's endTimestamp
         if(endTimestamp == 0) endTimestamp = pledgeParams.endTimestamp;
         if(endTimestamp > pledgeParams.endTimestamp || endTimestamp != _getRoundedTimestamp(endTimestamp)) revert Errors.InvalidEndTimestamp();
 
@@ -190,10 +191,12 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         uint256 bias = slope * boostDuration;
 
         // Rewards are set in the Pledge as reward/veToken/sec
-        // To find the total amount of veToken through the whole Boost duration:
-        uint256 totalAmountToReward = ((bias * boostDuration) + bias) / 2;
+        // To find the total amount of veToken delegated through the whole Boost duration
+        // based on the Boost bias & the Boost duration, to take in account that the delegated amount decreases
+        // each second of the Boost duration
+        uint256 totalDelegatedAmount = ((bias * boostDuration) + bias) / 2;
         // Then we can calculate the total amount of rewards for this Boost
-        uint256 rewardAmount = (totalAmountToReward * pledgeParams.rewardPerVote) / UNIT;
+        uint256 rewardAmount = (totalDelegatedAmount * pledgeParams.rewardPerVote) / UNIT;
 
         if(rewardAmount > pledgeAvailableRewardAmounts[pledgeId]) revert Errors.RewardsBalanceTooLow();
         pledgeAvailableRewardAmounts[pledgeId] -= rewardAmount;
@@ -212,9 +215,9 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         uint256 targetVotes,
         uint256 rewardPerVote, // reward/veToken/second
         uint256 endTimestamp,
-        uint256 totalRewardAmount,
-        uint256 feeAmount
-    ) external nonReentrant returns(uint256){
+        uint256 maxTotalRewardAmount,
+        uint256 maxFeeAmount
+    ) external whenNotPaused nonReentrant returns(uint256){
         address creator = msg.sender;
 
         if(receiver == address(0) || rewardToken == address(0)) revert Errors.ZeroAddress();
@@ -222,12 +225,15 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         if(minAmountRewardToken[rewardToken] == 0) revert Errors.TokenNotWhitelisted();
         if(rewardPerVote < minAmountRewardToken[rewardToken]) revert Errors.RewardPerVoteTooLow();
 
-        if(endTimestamp != _getRoundedTimestamp(endTimestamp)) revert Errors.InvalidEndTimestemp();
+        if(endTimestamp == 0) revert Errors.NullEndTimestamp();
+        if(endTimestamp != _getRoundedTimestamp(endTimestamp)) revert Errors.InvalidEndTimestamp();
         uint256 duration = endTimestamp - block.timestamp;
         if(duration < minDelegationTime) revert Errors.DurationTooShort();
 
-        if(((rewardPerVote * targetVotes * duration) / UNIT) != totalRewardAmount) revert Errors.IncorrectTotalRewardAmount();
-        if((totalRewardAmount * protocalFeeRatio) / MAX_PCT != feeAmount) revert Errors.IncorrectFeeAmount();
+        uint256 totalRewardAmount = (rewardPerVote * targetVotes * duration) / UNIT;
+        uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
+        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
+        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
         IERC20(rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
@@ -258,23 +264,27 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
     function extendPledge(
         uint256 pledgeId,
         uint256 newEndTimestamp,
-        uint256 totalRewardAmount,
-        uint256 feeAmount
-    ) external nonReentrant {
+        uint256 maxTotalRewardAmount,
+        uint256 maxFeeAmount
+    ) external whenNotPaused nonReentrant {
+        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
-
-        if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp)) revert Errors.InvalidEndTimestemp();
 
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
-
+        if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
         uint256 oldEndTimestamp = pledgeParams.endTimestamp;
+        if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
+
         uint256 addedDuration = newEndTimestamp - oldEndTimestamp;
         if(addedDuration < minDelegationTime) revert Errors.DurationTooShort();
-        if(((pledgeParams.rewardPerVote * pledgeParams.targetVotes * addedDuration) / UNIT) != totalRewardAmount) revert Errors.IncorrectTotalRewardAmount();
-        if((totalRewardAmount * protocalFeeRatio) / MAX_PCT != feeAmount) revert Errors.IncorrectFeeAmount();
+        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * pledgeParams.targetVotes * addedDuration) / UNIT;
+        uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
+        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
+        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
+
 
         // Pull all the rewards in this contract
         IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
@@ -293,7 +303,8 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         uint256 newTargetVotes,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
-    ) external nonReentrant {
+    ) external whenNotPaused nonReentrant {
+        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
 
@@ -304,10 +315,11 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         uint256 oldTargetVotes = pledgeParams.targetVotes;
         if(newTargetVotes <= oldTargetVotes) revert Errors.TargetVotesTooLoow();
         uint256 remainingDuration = pledgeParams.endTimestamp - block.timestamp;
-        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * newTargetVotes * remainingDuration) / UNIT;
+        uint256 targetVotesDiff = newTargetVotes - oldTargetVotes;
+        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * targetVotesDiff * remainingDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
-        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectTotalRewardAmount();
-        if(feeAmount > maxFeeAmount) revert Errors.IncorrectFeeAmount();
+        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
+        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
         IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
@@ -326,7 +338,8 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         uint256 newRewardPerVote,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
-    ) external nonReentrant {
+    ) external whenNotPaused nonReentrant {
+        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
 
@@ -335,12 +348,13 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
 
         uint256 oldRewardPerVote = pledgeParams.rewardPerVote;
-        if(newRewardPerVote <= oldRewardPerVote) revert Errors.TargetVotesTooLoow();
+        if(newRewardPerVote <= oldRewardPerVote) revert Errors.RewardsPerVotesTooLow();
         uint256 remainingDuration = pledgeParams.endTimestamp - block.timestamp;
-        uint256 totalRewardAmount = (newRewardPerVote * pledgeParams.targetVotes * remainingDuration) / UNIT;
+        uint256 rewardPerVoteDiff = newRewardPerVote - oldRewardPerVote;
+        uint256 totalRewardAmount = (rewardPerVoteDiff * pledgeParams.targetVotes * remainingDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
-        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectTotalRewardAmount();
-        if(feeAmount > maxFeeAmount) revert Errors.IncorrectFeeAmount();
+        if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
+        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
         IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
@@ -354,7 +368,8 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         emit IncreasePledgeRewardPerVote(pledgeId, oldRewardPerVote, newRewardPerVote);
     }
 
-    function retrievePledgeRewards(uint256 pledgeId, address receiver) external nonReentrant {
+    function retrievePledgeRewards(uint256 pledgeId, address receiver) external whenNotPaused nonReentrant {
+        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
         if(receiver == address(0)) revert Errors.ZeroAddress();
@@ -376,7 +391,8 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    function cancelPledge(uint256 pledgeId, address receiver) external nonReentrant {
+    function closePledge(uint256 pledgeId, address receiver) external whenNotPaused nonReentrant {
+        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
         if(receiver == address(0)) revert Errors.ZeroAddress();
@@ -398,7 +414,7 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
 
         }
 
-        emit CanceledPledge(pledgeId);
+        emit ClosePledge(pledgeId);
     }
 
 
@@ -432,6 +448,7 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
     }
 
     function updateRewardToken(address token, uint256 minRewardPerSecond) external onlyOwner {
+        if(token == address(0)) revert Errors.ZeroAddress();
         if(minAmountRewardToken[token] == 0) revert Errors.NotAllowedToken();
         if(minRewardPerSecond == 0) revert Errors.InvalidValue();
 
@@ -441,6 +458,7 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
     }
 
     function removeRewardToken(address token) external onlyOwner {
+        if(token == address(0)) revert Errors.ZeroAddress();
         if(minAmountRewardToken[token] == 0) revert Errors.NotAllowedToken();
         
         minAmountRewardToken[token] = 0;
@@ -485,6 +503,20 @@ contract WardenX is Ownable, Pausable, ReentrancyGuard {
         protocalFeeRatio = newFee;
 
         emit PlatformFeeUpdated(oldfee, newFee);
+    }
+
+    /**
+     * @notice Pauses the contract
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpauses the contract
+     */
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     /**

@@ -71,7 +71,7 @@ describe('Warden contract tests', () => {
 
         await CRV.connect(delegator).approve(veCRV.address, crv_amount);
         const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
+        const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         if(locked_balance.eq(0)){
             await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
         } else if(locked_balance.lt(lock_amount)) {
@@ -1163,9 +1163,9 @@ describe('Warden contract tests', () => {
             // Here:
             // Can't use .eq() because of how the slope is calculated inside BoostV2
             // slope: uint256 = _amount / (_endtime - block.timestamp)
-            // bias: uint256 = slope * _endtime
+            // bias: uint256 = slope * (_endtime - block.timestamp)
             // when calculating back the amount (amount: uint256 = point.slope * (ts - point.ts))
-            // we see a small difference dur to the division to get the slope
+            // we see a small difference due to the division to get the slope
             expect(await delegationBoost.received_balance(receiver.address, { blockTag: tx_block })).to.be.closeTo(buy_amount, 1e8)
             expect(await delegationBoost.delegated_balance(delegator.address, { blockTag: tx_block })).to.be.closeTo(buy_amount, 1e8)
 
