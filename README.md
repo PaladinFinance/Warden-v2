@@ -19,7 +19,7 @@ Currently it only works with Delegation Boost made for CRV rewards on Curve Gaug
 Because the veBoost contract rounds down to the week the _endtime given to create a Boost, users buying a Boost through Warden could get less days of Boost than what they paid for. So it does not happen, when creating a Boost, the Warden contract will add 1 more week to the calculations if needed, to the _endtime parameter to create the Boost, to reach a correct _endtime. This added days are counted in the amount of fees to pay when purchasing the Boost (and also accoutned for when estimating the fees to pay).  
 
 
-## Dependencies & Installation
+## Deployed contracts
 
 Warden: 0xA04A36614e4C1Eb8cc0137d6d34eaAc963167828  
 
