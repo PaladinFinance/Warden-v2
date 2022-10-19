@@ -19,7 +19,14 @@ import {
     resetFork,
 } from "./utils/utils";
 
-import { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VECRV_LOCKING_TIME } from "./utils/constant"
+let constants_path = "./utils/constant" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constant"
+else if(VE_TOKEN === "VEANGLE") constants_path = "./utils/angle-constant"
+
+
+const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VETOKEN_LOCKING_TIME, BLOCK_NUMBER } = require(constants_path);
 
 const WEEK = BigNumber.from(7 * 86400);
 const MAX_BPS = BigNumber.from(10000);
@@ -33,7 +40,7 @@ const MAX_UINT = ethers.constants.MaxUint256
 
 let wardenFactory: ContractFactory
 
-describe('Warden contract tests', () => {
+describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
     let admin: SignerWithAddress
     let reserveManager: SignerWithAddress
     let priceManager: SignerWithAddress
@@ -43,45 +50,45 @@ describe('Warden contract tests', () => {
 
     let warden: Warden
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let BaseToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IBoostV2
 
-    const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
+    const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50BaseToken for a 1000 veToken boost for a week
 
     const base_advised_price = BigNumber.from(1.25 * 1e10)
 
     before(async () => {
-        await resetFork();
+        await resetFork(BLOCK_NUMBER);
 
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const crv_amount = ethers.utils.parseEther('3000');
+        const baseToken_amount = ethers.utils.parseEther('3000');
         const lock_amount = ethers.utils.parseEther('1000');
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
 
         delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
-        await getERC20(admin, BIG_HOLDER, CRV, delegator.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
 
-        await CRV.connect(delegator).approve(veCRV.address, crv_amount);
-        const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+        await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
+        const locked_balance = (await veToken.locked(delegator.address)).amount
+        const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         if(locked_balance.eq(0)){
-            await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
+            await veToken.connect(delegator).create_lock(lock_amount, lock_time);
         } else if(locked_balance.lt(lock_amount)) {
-            await veCRV.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+            await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+            await veToken.connect(delegator).increase_unlock_time(lock_time);
         } else {
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+            await veToken.connect(delegator).increase_unlock_time(lock_time);
         }
 
-        await CRV.connect(delegator).transfer(receiver.address, crv_amount.sub(lock_amount));
+        await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
 
     })
 
@@ -89,8 +96,8 @@ describe('Warden contract tests', () => {
     beforeEach(async () => {
         
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            BaseToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
@@ -113,8 +120,8 @@ describe('Warden contract tests', () => {
         const warden_reserveAmount = await warden.reserveAmount();
         const warden_reserveManager = await warden.reserveManager();
 
-        expect(warden_feeToken).to.be.eq(CRV.address);
-        expect(warden_votingEscrow).to.be.eq(veCRV.address);
+        expect(warden_feeToken).to.be.eq(BaseToken.address);
+        expect(warden_votingEscrow).to.be.eq(veToken.address);
         expect(warden_delegationBoost).to.be.eq(delegationBoost.address);
         expect(warden_feeReserveRatio).to.be.eq(500);
         expect(warden_minPercRequired).to.be.eq(1000);
@@ -216,7 +223,7 @@ describe('Warden contract tests', () => {
             const delegator_offer_data = await warden.getOffer(delegator_index);
 
             expect(delegator_offer_data.expiryTime).to.be.eq(
-                await veCRV.locked__end(delegator.address)
+                await veToken.locked__end(delegator.address)
             );
 
         });
@@ -370,7 +377,7 @@ describe('Warden contract tests', () => {
             const delegator_offer_data = await warden.getOffer(delegator_index);
 
             expect(delegator_offer_data.expiryTime).to.be.eq(
-                await veCRV.locked__end(delegator.address)
+                await veToken.locked__end(delegator.address)
             );
 
         });
@@ -568,16 +575,16 @@ describe('Warden contract tests', () => {
 
             const fee_amount = ethers.utils.parseEther('100');
 
-            await CRV.connect(receiver).approve(warden.address, fee_amount)
+            await BaseToken.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
             const earned_fees = await warden.earnedFees(delegator.address)
 
-            const old_delegator_balance = await CRV.balanceOf(delegator.address)
+            const old_delegator_balance = await BaseToken.balanceOf(delegator.address)
 
             await warden.connect(delegator).quit()
 
-            const new_delegator_balance = await CRV.balanceOf(delegator.address)
+            const new_delegator_balance = await BaseToken.balanceOf(delegator.address)
 
             expect(new_delegator_balance.sub(old_delegator_balance)).to.be.eq(earned_fees)
 
@@ -673,8 +680,8 @@ describe('Warden contract tests', () => {
         });
 
         it(' should fail if given incorrect parameters', async () => {
-            const under_required_min_perc_amount = (await veCRV.balanceOf(delegator.address)).mul(500).div(MAX_BPS)
-            const overflow_max_perc_amount = (await veCRV.balanceOf(delegator.address)).mul(10100).div(MAX_BPS)
+            const under_required_min_perc_amount = (await veToken.balanceOf(delegator.address)).mul(500).div(MAX_BPS)
+            const overflow_max_perc_amount = (await veToken.balanceOf(delegator.address)).mul(10100).div(MAX_BPS)
 
             await expect(
                 warden.connect(receiver).estimateFees(ethers.constants.AddressZero, wanted_amount, wanted_duration)
@@ -703,8 +710,8 @@ describe('Warden contract tests', () => {
         });
 
         it(' should fail if parameters do not match delegator Offer', async () => {
-            const incorrect_min_perc_amount = (await veCRV.balanceOf(delegator.address)).mul(1500).div(MAX_BPS)
-            const incorrect_max_perc_amount = (await veCRV.balanceOf(delegator.address)).mul(8000).div(MAX_BPS)
+            const incorrect_min_perc_amount = (await veToken.balanceOf(delegator.address)).mul(1500).div(MAX_BPS)
+            const incorrect_max_perc_amount = (await veToken.balanceOf(delegator.address)).mul(8000).div(MAX_BPS)
 
             await warden.connect(delegator).updateOffer(price_per_vote, max_duration, expiry_time, min_perc, 7500, false)
 
@@ -771,7 +778,7 @@ describe('Warden contract tests', () => {
                 { blockTag: last_block }
             )
 
-            const block_wanted_amount = (await veCRV.balanceOf(delegator.address, { blockTag: last_block })).mul(wanted_perc).div(MAX_BPS)
+            const block_wanted_amount = (await veToken.balanceOf(delegator.address, { blockTag: last_block })).mul(wanted_perc).div(MAX_BPS)
 
             const timestamp = (await ethers.provider.getBlock(last_block)).timestamp
 
@@ -799,7 +806,7 @@ describe('Warden contract tests', () => {
                 { blockTag: last_block }
             )
 
-            const block_wanted_amount = (await veCRV.balanceOf(delegator.address, { blockTag: last_block })).mul(wanted_perc).div(MAX_BPS)
+            const block_wanted_amount = (await veToken.balanceOf(delegator.address, { blockTag: last_block })).mul(wanted_perc).div(MAX_BPS)
 
             const timestamp = (await ethers.provider.getBlock(last_block)).timestamp
 
@@ -893,7 +900,7 @@ describe('Warden contract tests', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, boost_amount, 1)
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
@@ -999,7 +1006,7 @@ describe('Warden contract tests', () => {
 
             fee_amount = await warden.estimateFeesPercent(delegator.address, boost_percent, 1)
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
@@ -1116,17 +1123,17 @@ describe('Warden contract tests', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_amount, duration)
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
         it(' should create a Boost from the delegator to the caller', async () => {
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_amount, duration, fee_amount)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
@@ -1155,10 +1162,10 @@ describe('Warden contract tests', () => {
 
             const tx_block = (await buy_tx).blockNumber
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_balance_delegator = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_balance_delegator = await veToken.balanceOf(delegator.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
 
             // Here:
             // Can't use .eq() because of how the slope is calculated inside BoostV2
@@ -1171,8 +1178,8 @@ describe('Warden contract tests', () => {
 
             expect(boost_expire_time).to.be.gte(tx_timestamp + (duration * one_week)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
 
-            expect(veCRV_adjusted_receiver).to.be.closeTo(veCRV_balance_receiver.add(buy_amount), 1e8)
-            expect(veCRV_adjusted_delegator).to.be.closeTo(veCRV_balance_delegator.sub(buy_amount), 1e8)
+            expect(veToken_adjusted_receiver).to.be.closeTo(veToken_balance_receiver.add(buy_amount), 1e8)
+            expect(veToken_adjusted_delegator).to.be.closeTo(veToken_balance_delegator.sub(buy_amount), 1e8)
 
             await advanceTime(WEEK.mul(duration + 1).toNumber())
             await delegationBoost.connect(delegator).checkpoint_user(delegator.address)
@@ -1185,11 +1192,11 @@ describe('Warden contract tests', () => {
 
             const fee_amount_advisedPrice = await warden.estimateFees(delegator.address, buy_amount, duration)
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_amount, duration, fee_amount_advisedPrice)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
@@ -1258,7 +1265,7 @@ describe('Warden contract tests', () => {
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 50, duration, fee_amount)
             ).to.be.revertedWith('PercentUnderMinRequired')
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, delegator_balance.mul(15).div(10), duration, fee_amount)
             ).to.be.revertedWith('PercentOverMax')
@@ -1269,7 +1276,7 @@ describe('Warden contract tests', () => {
 
             await warden.connect(delegator).updateOffer(price_per_vote, max_duration, expiry_time, min_perc, updated_max_perc, false);
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
             const delegator_min_bound = delegator_balance.mul(min_perc).div(MAX_BPS)
             const delegator_higher_amount = delegator_balance.mul(max_perc).div(MAX_BPS)
 
@@ -1313,7 +1320,7 @@ describe('Warden contract tests', () => {
 
         it(' should fail if contract has not enough allowance for the fee token', async () => {
 
-            await CRV.connect(receiver).approve(warden.address, 0)
+            await BaseToken.connect(receiver).approve(warden.address, 0)
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_amount, duration, fee_amount)
@@ -1362,13 +1369,13 @@ describe('Warden contract tests', () => {
 
             const boost_2_amount = ethers.utils.parseEther('200')
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, boost_2_amount, duration, fee_amount)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const tx_timestamp = (await ethers.provider.getBlock((await buy_tx).blockNumber || 0)).timestamp
 
@@ -1446,18 +1453,18 @@ describe('Warden contract tests', () => {
 
             fee_amount = await warden.estimateFeesPercent(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
 
         it(' should create a Boost from the delegator to the caller', async () => {
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, buy_percent, duration, fee_amount)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
@@ -1471,7 +1478,7 @@ describe('Warden contract tests', () => {
 
             const paidFees = old_balance.sub(new_balance)
 
-            const estimated_buy_amount = (await veCRV.balanceOf(delegator.address, { blockTag: tx_block })).mul(buy_percent).div(MAX_BPS)
+            const estimated_buy_amount = (await veToken.balanceOf(delegator.address, { blockTag: tx_block })).mul(buy_percent).div(MAX_BPS)
 
             await expect(buy_tx)
                 .to.emit(warden, 'BoostPurchase')
@@ -1487,18 +1494,18 @@ describe('Warden contract tests', () => {
 
             expect(paidFees).to.be.lt(fee_amount)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_balance_delegator = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_balance_delegator = await veToken.balanceOf(delegator.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
 
             expect(await delegationBoost.received_balance(receiver.address, { blockTag: tx_block })).to.be.closeTo(estimated_buy_amount, 1e8)
             expect(await delegationBoost.delegated_balance(delegator.address, { blockTag: tx_block })).to.be.closeTo(estimated_buy_amount, 1e8)
 
             expect(boost_expire_time).to.be.gte(tx_timestamp + (duration * one_week)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
 
-            expect(veCRV_adjusted_receiver).to.be.closeTo(veCRV_balance_receiver.add(estimated_buy_amount), 1e8)
-            expect(veCRV_adjusted_delegator).to.be.closeTo(veCRV_balance_delegator.sub(estimated_buy_amount), 1e8)
+            expect(veToken_adjusted_receiver).to.be.closeTo(veToken_balance_receiver.add(estimated_buy_amount), 1e8)
+            expect(veToken_adjusted_delegator).to.be.closeTo(veToken_balance_delegator.sub(estimated_buy_amount), 1e8)
 
             await advanceTime(WEEK.mul(duration + 1).toNumber())
             await delegationBoost.connect(delegator).checkpoint_user(delegator.address)
@@ -1511,11 +1518,11 @@ describe('Warden contract tests', () => {
 
             const fee_amount_advisedPrice = await warden.estimateFeesPercent(delegator.address, buy_percent, duration)
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, buy_percent, duration, fee_amount_advisedPrice)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
@@ -1529,7 +1536,7 @@ describe('Warden contract tests', () => {
 
             const paidFees = old_balance.sub(new_balance)
 
-            const estimated_buy_amount = (await veCRV.balanceOf(delegator.address, { blockTag: tx_block })).mul(buy_percent).div(MAX_BPS)
+            const estimated_buy_amount = (await veToken.balanceOf(delegator.address, { blockTag: tx_block })).mul(buy_percent).div(MAX_BPS)
 
             await expect(buy_tx)
                 .to.emit(warden, 'BoostPurchase')
@@ -1631,7 +1638,7 @@ describe('Warden contract tests', () => {
 
         it(' should fail if contract has not enough allowance for the fee token', async () => {
 
-            await CRV.connect(receiver).approve(warden.address, 0)
+            await BaseToken.connect(receiver).approve(warden.address, 0)
 
             await expect(
                 warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, buy_percent, duration, fee_amount)
@@ -1680,13 +1687,13 @@ describe('Warden contract tests', () => {
 
             const boost_2_percent = 2500
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, boost_2_percent, duration, fee_amount)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const tx_block = (await buy_tx).blockNumber
             const tx_timestamp = (await ethers.provider.getBlock((await buy_tx).blockNumber || 0)).timestamp
@@ -1698,7 +1705,7 @@ describe('Warden contract tests', () => {
 
             const paidFees = old_balance.sub(new_balance)
 
-            const estimated_buy_amount = (await veCRV.balanceOf(delegator.address, { blockTag: tx_block })).mul(boost_2_percent).div(MAX_BPS)
+            const estimated_buy_amount = (await veToken.balanceOf(delegator.address, { blockTag: tx_block })).mul(boost_2_percent).div(MAX_BPS)
 
             await expect(buy_tx)
                 .to.emit(warden, 'BoostPurchase')
@@ -1749,7 +1756,7 @@ describe('Warden contract tests', () => {
 
             const fee_amount = ethers.utils.parseEther('100');
 
-            await CRV.connect(receiver).approve(warden.address, fee_amount)
+            await BaseToken.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
             await advanceTime(WEEK.mul(2).toNumber())
@@ -1760,13 +1767,13 @@ describe('Warden contract tests', () => {
 
             const earned = await warden.claimable(delegator.address)
 
-            const old_Balance = await CRV.balanceOf(delegator.address)
+            const old_Balance = await BaseToken.balanceOf(delegator.address)
 
             await expect(warden.connect(delegator).claim())
                 .to.emit(warden, 'Claim')
                 .withArgs(delegator.address, earned);
 
-            const new_Balance = await CRV.balanceOf(delegator.address)
+            const new_Balance = await BaseToken.balanceOf(delegator.address)
 
             expect(new_Balance.sub(old_Balance)).to.be.eq(earned)
             expect(await warden.claimable(delegator.address)).to.be.eq(0)
@@ -1849,13 +1856,13 @@ describe('Warden contract tests', () => {
 
             const fee_amount_advisedPrice = await warden.estimateFees(delegator.address, buy_amount, duration)
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
-            const old_balance = await CRV.balanceOf(receiver.address)
+            const old_balance = await BaseToken.balanceOf(receiver.address)
 
             const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_amount, duration, fee_amount_advisedPrice)
 
-            const new_balance = await CRV.balanceOf(receiver.address)
+            const new_balance = await BaseToken.balanceOf(receiver.address)
 
             const token_id = (await warden.nextBoostId()).sub(1)
 
@@ -2052,7 +2059,7 @@ describe('Warden contract tests', () => {
 
                 const fee_amount = ethers.utils.parseEther('100');
 
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await BaseToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 await advanceTime(WEEK.mul(2).toNumber())
@@ -2239,16 +2246,16 @@ describe('Warden contract tests', () => {
             it(' should not allow to withdraw the fee Token', async () => {
 
                 //create a boost
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await BaseToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(delegator).register(price_per_vote, 10, 0, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 await advanceTime(WEEK.mul(2).toNumber())
 
-                const crv_amount = await CRV.balanceOf(warden.address);
+                const baseToken_amount = await BaseToken.balanceOf(warden.address);
 
                 await expect(
-                    warden.connect(admin).withdrawERC20(CRV.address, crv_amount)
+                    warden.connect(admin).withdrawERC20(BaseToken.address, baseToken_amount)
                 ).to.be.revertedWith('CannotWithdrawFeeToken')
 
             });
@@ -2256,7 +2263,7 @@ describe('Warden contract tests', () => {
             it(' should not allow to withdraw the feeToken is claim has been blocked', async () => {
 
                 //create a boost
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await BaseToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(delegator).register(price_per_vote, 10, 0, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
@@ -2264,15 +2271,15 @@ describe('Warden contract tests', () => {
 
                 await warden.connect(admin).blockClaim()
 
-                const crv_amount = await CRV.balanceOf(warden.address);
+                const baseToken_amount = await BaseToken.balanceOf(warden.address);
 
-                const oldBalance = await CRV.balanceOf(admin.address);
+                const oldBalance = await BaseToken.balanceOf(admin.address);
 
-                await warden.connect(admin).withdrawERC20(CRV.address, crv_amount)
+                await warden.connect(admin).withdrawERC20(BaseToken.address, baseToken_amount)
 
-                const newBalance = await CRV.balanceOf(admin.address);
+                const newBalance = await BaseToken.balanceOf(admin.address);
 
-                expect(newBalance.sub(oldBalance)).to.be.eq(crv_amount)
+                expect(newBalance.sub(oldBalance)).to.be.eq(baseToken_amount)
 
             });
 
@@ -2295,17 +2302,17 @@ describe('Warden contract tests', () => {
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
-                await CRV.connect(receiver).transfer(reserveManager.address, deposit_amount);
+                await BaseToken.connect(receiver).transfer(reserveManager.address, deposit_amount);
 
-                await CRV.connect(reserveManager).approve(warden.address, deposit_amount);
+                await BaseToken.connect(reserveManager).approve(warden.address, deposit_amount);
 
                 const old_reserve_amount = await warden.reserveAmount();
 
-                const oldBalance = await CRV.balanceOf(reserveManager.address);
+                const oldBalance = await BaseToken.balanceOf(reserveManager.address);
 
                 await warden.connect(reserveManager).depositToReserve(reserveManager.address, deposit_amount);
 
-                const newBalance = await CRV.balanceOf(reserveManager.address);
+                const newBalance = await BaseToken.balanceOf(reserveManager.address);
 
                 const new_reserve_amount = await warden.reserveAmount();
 
@@ -2341,7 +2348,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 //create a boost
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await BaseToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(delegator).register(price_per_vote, 10, 0, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 
@@ -2351,11 +2358,11 @@ describe('Warden contract tests', () => {
 
                 const old_reserve_amount = await warden.reserveAmount();
 
-                const oldBalance = await CRV.balanceOf(reserveManager.address);
+                const oldBalance = await BaseToken.balanceOf(reserveManager.address);
 
                 await warden.connect(reserveManager).withdrawFromReserve(withdraw_amount);
 
-                const newBalance = await CRV.balanceOf(reserveManager.address);
+                const newBalance = await BaseToken.balanceOf(reserveManager.address);
 
                 const new_reserve_amount = await warden.reserveAmount();
 
@@ -2369,7 +2376,7 @@ describe('Warden contract tests', () => {
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await BaseToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(delegator).register(price_per_vote, 10, 0, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoostPercent(delegator.address, receiver.address, 10000, 1, fee_amount);
 

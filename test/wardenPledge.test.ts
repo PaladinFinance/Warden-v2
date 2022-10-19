@@ -19,16 +19,23 @@ import {
     resetFork,
 } from "./utils/utils";
 
-import {
+let constants_path = "./utils/constant" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constant"
+else if(VE_TOKEN === "VEANGLE") constants_path = "./utils/angle-constant"
+
+const {
     TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
     BOOST_DELEGATION_ADDRESS,
     BIG_HOLDER,
-    VECRV_LOCKING_TIME,
+    VETOKEN_LOCKING_TIME,
     TOKENS,
     HOLDERS,
-    AMOUNTS
-} from "./utils/constant"
+    AMOUNTS,
+    BLOCK_NUMBER
+} = require(constants_path);
 
 chai.use(solidity);
 const { expect } = chai;
@@ -48,7 +55,7 @@ const min_reward_per_vote = [
     ethers.utils.parseEther('0.000000001')
 ]
 
-describe('Warden Pledge contract tests', () => {
+describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
     let admin: SignerWithAddress
     let chest: SignerWithAddress
     let receiver: SignerWithAddress
@@ -63,8 +70,8 @@ describe('Warden Pledge contract tests', () => {
     let delegator2: SignerWithAddress
     let delegator3: SignerWithAddress
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let BaseToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IBoostV2
 
     let rewardToken1: IERC20
@@ -72,7 +79,7 @@ describe('Warden Pledge contract tests', () => {
 
     let delegators: SignerWithAddress[]
 
-    const crv_amount = ethers.utils.parseEther('4000000');
+    const baseToken_amount = ethers.utils.parseEther('4000000');
     const lock_amounts = [
         ethers.utils.parseEther('500000'),
         ethers.utils.parseEther('750000'),
@@ -84,75 +91,61 @@ describe('Warden Pledge contract tests', () => {
     }
 
     const resetVeLock = async (user: SignerWithAddress, lock_amount: BigNumber) => {
-        const locked_balance = (await veCRV.locked(user.address)).amount
-        const lock_end = (await veCRV.locked(user.address)).end
-        const unlock_time = getRoundedTimestamp(VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
+        const locked_balance = (await veToken.locked(user.address)).amount
+        const lock_end = (await veToken.locked(user.address)).end
+        const unlock_time = getRoundedTimestamp(VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
         if(locked_balance.eq(0)){
-            await veCRV.connect(user).create_lock(lock_amount, unlock_time);
+            await veToken.connect(user).create_lock(lock_amount, unlock_time);
         } else if(locked_balance.lt(lock_amount)) {
-            await veCRV.connect(user).increase_amount(lock_amount.sub(locked_balance));
-            if(unlock_time.gt(lock_end)) await veCRV.connect(user).increase_unlock_time(unlock_time);
+            await veToken.connect(user).increase_amount(lock_amount.sub(locked_balance));
+            if(unlock_time.gt(lock_end)) await veToken.connect(user).increase_unlock_time(unlock_time);
         } else if(unlock_time.gt(lock_end)) {
-            await veCRV.connect(user).increase_unlock_time(unlock_time);
+            await veToken.connect(user).increase_unlock_time(unlock_time);
         }
     }
 
     before(async () => {
-        await resetFork();
-
         [admin, chest, receiver, externalUser, creator, other_creator, delegator1, delegator2, delegator3] = await ethers.getSigners();
 
         delegators = [delegator1, delegator2, delegator3]
 
         wardenPledgeFactory = await ethers.getContractFactory("WardenPledge");
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
 
         delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
         rewardToken1 = IERC20__factory.connect(TOKENS[0], provider);
         rewardToken2 = IERC20__factory.connect(TOKENS[1], provider);
-
-        await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
-        await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
-
-        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
-
-        for(let i = 0; i < delegators.length; i++){
-            let delegator = delegators[i]
-            await CRV.connect(admin).transfer(delegator.address, lock_amounts[i]);
-            await CRV.connect(delegator).approve(veCRV.address, lock_amounts[i]);
-            /*const locked_balance = (await veCRV.locked(delegator.address)).amount
-            const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
-            if(locked_balance.eq(0)){
-                await veCRV.connect(delegator).create_lock(lock_amounts[i], lock_time);
-            } else if(locked_balance.lt(lock_amounts[i])) {
-                await veCRV.connect(delegator).increase_amount(lock_amounts[i].sub(locked_balance));
-                await veCRV.connect(delegator).increase_unlock_time(lock_time);
-            } else {
-                await veCRV.connect(delegator).increase_unlock_time(lock_time);
-            }*/
-        }
-
     })
 
 
     beforeEach(async () => {
+        await resetFork(BLOCK_NUMBER);
+
         
         wardenPledge = (await wardenPledgeFactory.connect(admin).deploy(
-            veCRV.address,
+            veToken.address,
             delegationBoost.address,
             chest.address,
             min_target_votes
         )) as WardenPledge;
         await wardenPledge.deployed();
 
+        await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
+        await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
+
+        await getERC20(admin, BIG_HOLDER, BaseToken, admin.address, baseToken_amount);
+
         for(let i = 0; i < delegators.length; i++){
+            let delegator = delegators[i]
+            await BaseToken.connect(admin).transfer(delegator.address, lock_amounts[i]);
+            await BaseToken.connect(delegator).approve(veToken.address, lock_amounts[i]);
+
             await resetVeLock(delegators[i], lock_amounts[i])
         }
-
     });
 
     it(' should be deployed & have correct parameters', async () => {
@@ -164,7 +157,7 @@ describe('Warden Pledge contract tests', () => {
         const wardenPledge_protocalFeeRatio = await wardenPledge.protocalFeeRatio();
         const wardenPledge_minTargetVotes = await wardenPledge.minTargetVotes();
 
-        expect(wardenPledge_votingEscrow).to.be.eq(veCRV.address);
+        expect(wardenPledge_votingEscrow).to.be.eq(veToken.address);
         expect(wardenPledge_delegationBoost).to.be.eq(delegationBoost.address);
         expect(wardenPledge_chestAddress).to.be.eq(chest.address);
         expect(wardenPledge_protocalFeeRatio).to.be.eq(250);
@@ -401,7 +394,7 @@ describe('Warden Pledge contract tests', () => {
         it(' should only work for added reward tokens', async () => {
 
             await expect(
-                wardenPledge.connect(admin).updateRewardToken(CRV.address, new_min_reward_per_vote[0])
+                wardenPledge.connect(admin).updateRewardToken(BaseToken.address, new_min_reward_per_vote[0])
             ).to.be.revertedWith('NotAllowedToken')
 
         });
@@ -472,7 +465,7 @@ describe('Warden Pledge contract tests', () => {
         it(' should fail if token is not already listed', async () => {
 
             await expect(
-                wardenPledge.connect(admin).removeRewardToken(CRV.address)
+                wardenPledge.connect(admin).removeRewardToken(BaseToken.address)
             ).to.be.revertedWith('NotAllowedToken')
 
         });
@@ -1093,12 +1086,12 @@ describe('Warden Pledge contract tests', () => {
 
         it(' should fail if the reward token given is not listed as allowed', async () => {
 
-            await CRV.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
+            await BaseToken.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
             expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
-                    CRV.address,
+                    BaseToken.address,
                     target_votes,
                     reward_per_vote,
                     end_timestamp,
@@ -2672,7 +2665,7 @@ describe('Warden Pledge contract tests', () => {
             const tx_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
             const boost_duration = boost_end_timestamp.sub(tx_timestamp)
 
-            const expected_boost_amount = (await veCRV.balanceOf(delegator1.address, { blockTag: tx_block })).mul(deleg_percent).div(MAX_BPS)
+            const expected_boost_amount = (await veToken.balanceOf(delegator1.address, { blockTag: tx_block })).mul(deleg_percent).div(MAX_BPS)
 
             const boost_slope = expected_boost_amount.div(boost_duration)
             const boost_bias = boost_duration.mul(boost_slope)
@@ -2726,7 +2719,7 @@ describe('Warden Pledge contract tests', () => {
             const tx_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
             const boost_duration = boost_end_timestamp.sub(tx_timestamp)
 
-            const expected_boost_amount = await veCRV.balanceOf(delegator1.address, { blockTag: tx_block })
+            const expected_boost_amount = await veToken.balanceOf(delegator1.address, { blockTag: tx_block })
 
             const boost_slope = expected_boost_amount.div(boost_duration)
             const boost_bias = boost_duration.mul(boost_slope)
@@ -3587,18 +3580,18 @@ describe('Warden Pledge contract tests', () => {
 
         beforeEach(async () => {
 
-            await CRV.connect(admin).transfer(wardenPledge.address, lost_amount)
+            await BaseToken.connect(admin).transfer(wardenPledge.address, lost_amount)
 
         });
 
 
         it(' should retrieve the lost tokens and send it to the admin', async () => {
 
-            const oldBalance = await CRV.balanceOf(admin.address);
+            const oldBalance = await BaseToken.balanceOf(admin.address);
 
-            await wardenPledge.connect(admin).recoverERC20(CRV.address)
+            await wardenPledge.connect(admin).recoverERC20(BaseToken.address)
 
-            const newBalance = await CRV.balanceOf(admin.address);
+            const newBalance = await BaseToken.balanceOf(admin.address);
 
             expect(newBalance.sub(oldBalance)).to.be.eq(lost_amount)
 
@@ -3606,10 +3599,10 @@ describe('Warden Pledge contract tests', () => {
 
         it(' should fail for whitelisted tokens', async () => {
 
-            await wardenPledge.connect(admin).addRewardToken(CRV.address, ethers.utils.parseEther('0.000005'))
+            await wardenPledge.connect(admin).addRewardToken(BaseToken.address, ethers.utils.parseEther('0.000005'))
 
             await expect(
-                wardenPledge.connect(admin).recoverERC20(CRV.address)
+                wardenPledge.connect(admin).recoverERC20(BaseToken.address)
             ).to.be.revertedWith('CannotRecoverToken')
 
         });
@@ -3617,7 +3610,7 @@ describe('Warden Pledge contract tests', () => {
         it(' should block non-admin caller', async () => {
 
             await expect(
-                wardenPledge.connect(creator).recoverERC20(CRV.address)
+                wardenPledge.connect(creator).recoverERC20(BaseToken.address)
             ).to.be.revertedWith('Ownable: caller is not the owner')
 
         });
