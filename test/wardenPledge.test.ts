@@ -124,7 +124,6 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
 
     beforeEach(async () => {
         await resetFork(BLOCK_NUMBER);
-
         
         wardenPledge = (await wardenPledgeFactory.connect(admin).deploy(
             veToken.address,

@@ -226,7 +226,6 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
 
     });
 
-
     describe('simpleMultiBuy', async () => {
 
         const one_week = BigNumber.from(7 * 86400);
@@ -735,7 +734,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
             const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
             const events = buy_logs.map((log) => (iface.parseLog(log)).args)
 
-            const expected_offers_indexes_order = [1,2,4,8] // Expected Offers to have been used by the multiBuy
+            const expected_offers_indexes_order = [1,2,4] // Expected Offers to have been used by the multiBuy
             let effective_total_boost_amount = BigNumber.from(0)
 
             const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
@@ -1269,7 +1268,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
                 const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
                 const events = buy_logs.map((log) => (iface.parseLog(log)).args)
     
-                const expected_offers_indexes_order = [7,2,3] // Expected Offers to have been used by the multiBuy
+                const expected_offers_indexes_order = [7,4] // Expected Offers to have been used by the multiBuy
                 let effective_total_boost_amount = BigNumber.from(0)
     
                 const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
@@ -1281,7 +1280,6 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
     
                     let boost_delegator = e.delegator
                     let boost_index = await warden.userIndex(boost_delegator)
-                    
 
                     expect(boost_index.toNumber()).to.be.eq(expected_offers_indexes_order[i])
 
@@ -1600,7 +1598,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
     
                 await delegationBoost.connect(delegator8).approve(warden.address, 0);
 
-                const slightly_smaller_amount = ethers.utils.parseEther('7000')
+                const slightly_smaller_amount = ethers.utils.parseEther('8000')
                 const slightly_smaller_fee_amount = slightly_smaller_amount.mul(max_price).mul(one_week.mul(duration + 1)).div(unit)
     
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1708,7 +1706,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
                 const events = buy_logs.map((log) => (iface.parseLog(log)).args)
     
                 // we expect to skip the 5th one, because its lock is too short
-                const expected_offers_indexes_order = [7,8,1,4] // Expected Offers to have been used by the multiBuy
+                const expected_offers_indexes_order = [7,8,1] // Expected Offers to have been used by the multiBuy
                 let effective_total_boost_amount = BigNumber.from(0)
     
                 const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
@@ -1842,7 +1840,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
             const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
 
             let i = 0
-            const expected_offers_indexes_order = [4,1,3,8,7] // Expected Offers to have been used by the multiBuy
+            const expected_offers_indexes_order = [4,1,3,8] // Expected Offers to have been used by the multiBuy
 
             const expected_sorted_list = await multiBuy.getSortedOffers() //This method was tested in earlier Quicksort tests
 
@@ -1949,7 +1947,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
             const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
             const events = buy_logs.map((log) => (iface.parseLog(log)).args)
 
-            const expected_offers_indexes_order = [2,3,4] // Expected Offers to have been used by the multiBuy
+            const expected_offers_indexes_order = [2,3] // Expected Offers to have been used by the multiBuy
             let effective_total_boost_amount = BigNumber.from(0)
 
             const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
@@ -2027,7 +2025,7 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
             const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
             const events = buy_logs.map((log) => (iface.parseLog(log)).args)
 
-            const expected_offers_indexes_order = [7,8,4] // Expected Offers to have been used by the multiBuy
+            const expected_offers_indexes_order = [7,8] // Expected Offers to have been used by the multiBuy
             let effective_total_boost_amount = BigNumber.from(0)
 
             const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
@@ -2039,7 +2037,6 @@ describe('Warden MultiBuy contract tests - ' + VE_TOKEN + ' version', () => {
 
                 let boost_delegator = e.delegator
                 let boost_index = await warden.userIndex(boost_delegator)
-
                 expect(boost_index.toNumber()).to.be.eq(expected_offers_indexes_order[i])
 
                 const delegator_offer = await warden.offers(boost_index);

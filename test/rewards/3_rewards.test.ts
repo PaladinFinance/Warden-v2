@@ -95,8 +95,6 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
     const total_reward_amount = ethers.utils.parseEther('200000');
 
     before(async () => {
-        await resetFork(BLOCK_NUMBER);
-
         [
             admin,
             delegator1,
@@ -115,9 +113,6 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
         wardenFactory = await ethers.getContractFactory("Warden");
         multiBuyFactory = await ethers.getContractFactory("WardenMultiBuy");
 
-        const baseToken_amount = ethers.utils.parseEther('8000');
-        const lock_amount = ethers.utils.parseEther('2000'); //change the lock amounts
-
         BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
         veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
@@ -125,6 +120,33 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
         delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
         rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
+
+    });
+
+
+    beforeEach(async () => {
+        await resetFork(BLOCK_NUMBER);
+
+        const baseToken_amount = ethers.utils.parseEther('8000');
+        const lock_amount = ethers.utils.parseEther('2000'); //change the lock amounts
+
+        warden = (await wardenFactory.connect(admin).deploy(
+            BaseToken.address,
+            veToken.address,
+            delegationBoost.address,
+            500, //5%
+            1000, //10%
+            base_advised_price
+        )) as Warden;
+        await warden.deployed();
+
+        multiBuy = (await multiBuyFactory.connect(admin).deploy(
+            BaseToken.address,
+            veToken.address,
+            delegationBoost.address,
+            warden.address
+        )) as WardenMultiBuy;
+        await multiBuy.deployed();
 
         await getERC20(admin, BIG_HOLDER, BaseToken, admin.address, baseToken_amount);
 
@@ -163,29 +185,6 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
 
         await BaseToken.connect(admin).transfer(receiver.address, baseToken_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
         await BaseToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
-
-    });
-
-
-    beforeEach(async () => {
-
-        warden = (await wardenFactory.connect(admin).deploy(
-            BaseToken.address,
-            veToken.address,
-            delegationBoost.address,
-            500, //5%
-            1000, //10%
-            base_advised_price
-        )) as Warden;
-        await warden.deployed();
-
-        multiBuy = (await multiBuyFactory.connect(admin).deploy(
-            BaseToken.address,
-            veToken.address,
-            delegationBoost.address,
-            warden.address
-        )) as WardenMultiBuy;
-        await multiBuy.deployed();
 
         await delegationBoost.connect(delegator1).approve(warden.address, ethers.constants.MaxUint256);
         await delegationBoost.connect(delegator2).approve(warden.address, ethers.constants.MaxUint256);

@@ -77,14 +77,9 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
     const total_reward_amount = ethers.utils.parseEther('20000');
 
     before(async () => {
-        await resetFork(BLOCK_NUMBER);
-
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
-
-        const baseToken_amount = ethers.utils.parseEther('4000000');
-        const lock_amount = ethers.utils.parseEther('3000000');
 
         BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
@@ -93,6 +88,24 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
         delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
         rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
+    })
+
+
+    beforeEach(async () => {
+        await resetFork(BLOCK_NUMBER);
+
+        warden = (await wardenFactory.connect(admin).deploy(
+            BaseToken.address,
+            veToken.address,
+            delegationBoost.address,
+            500, //5%
+            1000, //10%
+            base_advised_price
+        )) as Warden;
+        await warden.deployed();
+
+        const baseToken_amount = ethers.utils.parseEther('1000000');
+        const lock_amount = ethers.utils.parseEther('500000');
 
         await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
 
@@ -112,21 +125,6 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
         }
 
         await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
-
-    })
-
-
-    beforeEach(async () => {
-
-        warden = (await wardenFactory.connect(admin).deploy(
-            BaseToken.address,
-            veToken.address,
-            delegationBoost.address,
-            500, //5%
-            1000, //10%
-            base_advised_price
-        )) as Warden;
-        await warden.deployed();
 
         await delegationBoost.connect(delegator).approve(warden.address, ethers.constants.MaxUint256);
 
@@ -222,7 +220,7 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
 
         const max_duration = 10
 
-        const buy_amount = ethers.utils.parseEther("1000000")
+        const buy_amount = ethers.utils.parseEther("100000")
         const duration = 2
 
         let fee_amount: BigNumber;
@@ -1031,7 +1029,7 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
 
         let fee_amount: BigNumber;
 
-        const new_targetPurchaseAmount = ethers.utils.parseEther('150000')
+        const new_targetPurchaseAmount = ethers.utils.parseEther('200000')
 
         beforeEach(async () => {
 
