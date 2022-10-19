@@ -1045,7 +1045,7 @@ describe('Warden Pledge contract tests', () => {
 
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     ethers.constants.AddressZero,
                     rewardToken1.address,
@@ -1057,7 +1057,7 @@ describe('Warden Pledge contract tests', () => {
                 )
             ).to.be.revertedWith('ZeroAddress')
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     ethers.constants.AddressZero,
@@ -1077,7 +1077,7 @@ describe('Warden Pledge contract tests', () => {
 
             const invalid_target_votes = min_target_votes.div(2)
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1095,7 +1095,7 @@ describe('Warden Pledge contract tests', () => {
 
             await CRV.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     CRV.address,
@@ -1115,7 +1115,7 @@ describe('Warden Pledge contract tests', () => {
 
             const invalid_reward_per_vote = min_reward_per_vote[0].div(2)
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1136,7 +1136,7 @@ describe('Warden Pledge contract tests', () => {
             const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
             const not_rounded_end_timestamp = current_ts.add(WEEK.mul(week_duration))
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1148,7 +1148,7 @@ describe('Warden Pledge contract tests', () => {
                 )
             ).to.be.revertedWith('InvalidEndTimestamp')
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1171,7 +1171,7 @@ describe('Warden Pledge contract tests', () => {
             // rounding down, so it will end before the exact week_duration given
             end_timestamp = getRoundedTimestamp(end_timestamp)
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1196,7 +1196,7 @@ describe('Warden Pledge contract tests', () => {
             const duration = end_timestamp.sub(current_ts)
             const invalid_max_total_reward_amount = target_votes.div(2).mul(reward_per_vote).mul(duration).div(UNIT)
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
@@ -1214,7 +1214,7 @@ describe('Warden Pledge contract tests', () => {
 
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
-            expect(
+            await expect(
                 wardenPledge.connect(creator).createPledge(
                     receiver.address,
                     rewardToken1.address,
