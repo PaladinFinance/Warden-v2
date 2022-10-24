@@ -98,8 +98,6 @@ describe('Warden Pledge contract tests', () => {
     }
 
     before(async () => {
-        await resetFork();
-
         [admin, chest, receiver, externalUser, creator, other_creator, delegator1, delegator2, delegator3] = await ethers.getSigners();
 
         delegators = [delegator1, delegator2, delegator3]
@@ -115,31 +113,11 @@ describe('Warden Pledge contract tests', () => {
         rewardToken1 = IERC20__factory.connect(TOKENS[0], provider);
         rewardToken2 = IERC20__factory.connect(TOKENS[1], provider);
 
-        await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
-        await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
-
-        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
-
-        for(let i = 0; i < delegators.length; i++){
-            let delegator = delegators[i]
-            await CRV.connect(admin).transfer(delegator.address, lock_amounts[i]);
-            await CRV.connect(delegator).approve(veCRV.address, lock_amounts[i]);
-            /*const locked_balance = (await veCRV.locked(delegator.address)).amount
-            const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
-            if(locked_balance.eq(0)){
-                await veCRV.connect(delegator).create_lock(lock_amounts[i], lock_time);
-            } else if(locked_balance.lt(lock_amounts[i])) {
-                await veCRV.connect(delegator).increase_amount(lock_amounts[i].sub(locked_balance));
-                await veCRV.connect(delegator).increase_unlock_time(lock_time);
-            } else {
-                await veCRV.connect(delegator).increase_unlock_time(lock_time);
-            }*/
-        }
-
     })
 
 
     beforeEach(async () => {
+        await resetFork();
         
         wardenPledge = (await wardenPledgeFactory.connect(admin).deploy(
             veCRV.address,
@@ -149,7 +127,15 @@ describe('Warden Pledge contract tests', () => {
         )) as WardenPledge;
         await wardenPledge.deployed();
 
+        await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
+        await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
+
+        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
+
         for(let i = 0; i < delegators.length; i++){
+            let delegator = delegators[i]
+            await CRV.connect(admin).transfer(delegator.address, lock_amounts[i]);
+            await CRV.connect(delegator).approve(veCRV.address, lock_amounts[i]);
             await resetVeLock(delegators[i], lock_amounts[i])
         }
 
@@ -574,6 +560,7 @@ describe('Warden Pledge contract tests', () => {
             const pledge_data = await wardenPledge.pledges(expected_id)
 
             expect(pledge_data.targetVotes).to.be.eq(target_votes);
+            expect(pledge_data.votesDifference).to.be.eq(target_votes);
             expect(pledge_data.rewardPerVote).to.be.eq(reward_per_vote);
             expect(pledge_data.receiver).to.be.eq(receiver.address);
             expect(pledge_data.rewardToken).to.be.eq(rewardToken1.address);
@@ -649,6 +636,107 @@ describe('Warden Pledge contract tests', () => {
                     creator.address,
                     chest.address,
                     real_fee_amount
+                );
+
+        });
+
+        it(' should set the correct voteDifference if the receiver already has veToken balance', async () => {
+
+            const lock_amount = ethers.utils.parseEther('12500')
+
+            await CRV.connect(admin).transfer(receiver.address, lock_amount);
+            await CRV.connect(receiver).approve(veCRV.address, lock_amount);
+
+            const unlock_time = getRoundedTimestamp(VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
+            await veCRV.connect(receiver).create_lock(lock_amount, unlock_time);
+            
+            await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
+
+            const expected_id = await wardenPledge.pledgesIndex();
+
+            const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+
+            const create_tx = await wardenPledge.connect(creator).createPledge(
+                receiver.address,
+                rewardToken1.address,
+                target_votes,
+                reward_per_vote,
+                end_timestamp,
+                max_total_reward_amount,
+                max_fee_amount
+            )
+
+            const tx_block = (await create_tx).blockNumber
+            const tx_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
+
+            const receiver_balance = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+
+            const real_votes_difference = target_votes.sub(receiver_balance)
+            const real_duration = end_timestamp.sub(tx_timestamp)
+            const real_total_reward_amount = real_votes_difference.mul(reward_per_vote).mul(real_duration).div(UNIT)
+            const fee_ratio = await wardenPledge.protocalFeeRatio()
+            const real_fee_amount = real_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
+
+            expect(await wardenPledge.pledgesIndex()).to.be.eq(expected_id.add(1));
+
+            expect(await wardenPledge.pledgeAvailableRewardAmounts(expected_id)).to.be.eq(real_total_reward_amount);
+
+            const pledge_data = await wardenPledge.pledges(expected_id)
+
+            expect(pledge_data.targetVotes).to.be.eq(target_votes);
+            expect(pledge_data.votesDifference).to.be.eq(real_votes_difference);
+            expect(pledge_data.rewardPerVote).to.be.eq(reward_per_vote);
+            expect(pledge_data.receiver).to.be.eq(receiver.address);
+            expect(pledge_data.rewardToken).to.be.eq(rewardToken1.address);
+            expect(pledge_data.endTimestamp).to.be.eq(end_timestamp);
+            expect(pledge_data.closed).to.be.false;
+
+            expect(await wardenPledge.pledgeOwner(expected_id)).to.be.eq(creator.address);
+
+            const creator_pledges = await wardenPledge.getUserPledges(creator.address)
+
+            expect(creator_pledges[creator_pledges.length - 1]).to.be.eq(expected_id);
+
+            const all_pledges = await wardenPledge.getAllPledges()
+
+            const last_pledge = all_pledges[all_pledges.length - 1]
+            expect(last_pledge.targetVotes).to.be.eq(pledge_data.targetVotes);
+            expect(last_pledge.votesDifference).to.be.eq(pledge_data.votesDifference);
+            expect(last_pledge.rewardPerVote).to.be.eq(pledge_data.rewardPerVote);
+            expect(last_pledge.receiver).to.be.eq(pledge_data.receiver);
+            expect(last_pledge.rewardToken).to.be.eq(pledge_data.rewardToken);
+            expect(last_pledge.endTimestamp).to.be.eq(pledge_data.endTimestamp);
+            expect(last_pledge.closed).to.be.eq(pledge_data.closed);
+
+            const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+
+            expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount))
+
+            await expect(create_tx)
+                .to.emit(rewardToken1, 'Transfer')
+                .withArgs(
+                    creator.address,
+                    wardenPledge.address,
+                    real_total_reward_amount
+                );
+
+            await expect(create_tx)
+                .to.emit(rewardToken1, 'Transfer')
+                .withArgs(
+                    creator.address,
+                    chest.address,
+                    real_fee_amount
+                );
+
+            await expect(create_tx)
+                .to.emit(wardenPledge, 'NewPledge')
+                .withArgs(
+                    creator.address,
+                    receiver.address,
+                    rewardToken1.address,
+                    target_votes,
+                    reward_per_vote,
+                    end_timestamp
                 );
 
         });
@@ -1289,7 +1377,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1313,6 +1402,7 @@ describe('Warden Pledge contract tests', () => {
             const pledge_data = await wardenPledge.pledges(pledge_id)
 
             expect(pledge_data.targetVotes).to.be.eq(target_votes);
+            expect(pledge_data.votesDifference).to.be.eq(pledge_vote_diff);
             expect(pledge_data.rewardPerVote).to.be.eq(reward_per_vote);
             expect(pledge_data.receiver).to.be.eq(receiver.address);
             expect(pledge_data.rewardToken).to.be.eq(rewardToken1.address);
@@ -1353,7 +1443,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1375,7 +1466,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1417,7 +1509,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1441,7 +1534,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1463,7 +1557,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1486,7 +1581,8 @@ describe('Warden Pledge contract tests', () => {
             const invalid_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration)).sub(150)
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1517,7 +1613,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.div(2))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1539,7 +1636,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.div(2).mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.div(2).mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1561,7 +1659,8 @@ describe('Warden Pledge contract tests', () => {
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
             new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
             const added_duration = new_end_timestamp.sub(end_timestamp)
-            added_max_total_reward_amount = target_votes.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
             const fee_ratio = await wardenPledge.protocalFeeRatio()
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
@@ -1571,241 +1670,6 @@ describe('Warden Pledge contract tests', () => {
                 wardenPledge.connect(creator).extendPledge(
                     pledge_id,
                     new_end_timestamp,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount.div(2)
-                )
-            ).to.be.revertedWith('IncorrectMaxFeeAmount')
-
-        });
-
-    });
-
-    describe('increasePledgeTargetVotes', async () => {
-
-        const target_votes = ethers.utils.parseEther("750000")
-        const reward_per_vote = ethers.utils.parseEther('0.000000015')
-        const week_duration = BigNumber.from(6)
-
-        let end_timestamp: BigNumber
-        let max_total_reward_amount: BigNumber
-        let max_fee_amount: BigNumber
-
-        const new_target_votes = ethers.utils.parseEther("950000")
-
-        let added_max_total_reward_amount: BigNumber
-        let added_max_fee_amount: BigNumber
-
-        let pledge_id: BigNumber
-
-        beforeEach(async () => {
-
-            await wardenPledge.connect(admin).addMultipleRewardToken(
-                [rewardToken1.address, rewardToken2.address],
-                min_reward_per_vote
-            )
-
-            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
-            end_timestamp = current_ts.add(WEEK.mul(week_duration))
-            // rounding down, so it will end before the exact week_duration given
-            end_timestamp = getRoundedTimestamp(end_timestamp)
-            const duration = end_timestamp.sub(current_ts)
-            max_total_reward_amount = target_votes.mul(reward_per_vote).mul(duration).div(UNIT)
-            const fee_ratio = await wardenPledge.protocalFeeRatio()
-            max_fee_amount = max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
-
-            await rewardToken1.connect(admin).transfer(creator.address, max_total_reward_amount.add(max_fee_amount).mul(2))
-
-            await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
-
-            pledge_id = await wardenPledge.pledgesIndex();
-
-            await wardenPledge.connect(creator).createPledge(
-                receiver.address,
-                rewardToken1.address,
-                target_votes,
-                reward_per_vote,
-                end_timestamp,
-                max_total_reward_amount,
-                max_fee_amount
-            )
-
-            await advanceTime(WEEK.mul(3).toNumber())
-
-            const new_current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
-            const reamining_duration = end_timestamp.sub(new_current_ts)
-            added_max_total_reward_amount = (new_target_votes.sub(target_votes)).mul(reward_per_vote).mul(reamining_duration).div(UNIT)
-            added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
-
-            await rewardToken1.connect(creator).approve(wardenPledge.address, added_max_total_reward_amount.add(added_max_fee_amount))
-
-        })
-
-        it(' should increase the Pledge targetVote parameter (& emit Event)', async () => {
-
-            const old_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
-
-            const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
-
-            const increase_tx = await wardenPledge.connect(creator).increasePledgeTargetVotes(
-                pledge_id,
-                new_target_votes,
-                added_max_total_reward_amount,
-                added_max_fee_amount
-            )
-
-            const tx_timestamp = (await ethers.provider.getBlock((await increase_tx).blockNumber || 0)).timestamp
-            const real_remaining_duration = end_timestamp.sub(tx_timestamp)
-            const diff_target_votes = new_target_votes.sub(target_votes)
-            const real_added_total_reward_amount = diff_target_votes.mul(reward_per_vote).mul(real_remaining_duration).div(UNIT)
-            const fee_ratio = await wardenPledge.protocalFeeRatio()
-            const real_added_fee_amount = real_added_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
-
-            const pledge_data = await wardenPledge.pledges(pledge_id)
-
-            expect(pledge_data.targetVotes).to.be.eq(new_target_votes);
-            expect(pledge_data.rewardPerVote).to.be.eq(reward_per_vote);
-            expect(pledge_data.receiver).to.be.eq(receiver.address);
-            expect(pledge_data.rewardToken).to.be.eq(rewardToken1.address);
-            expect(pledge_data.endTimestamp).to.be.eq(end_timestamp);
-            expect(pledge_data.closed).to.be.false;
-
-            const new_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
-
-            expect(new_remaining_rewards).to.be.eq(old_remaining_rewards.add(real_added_total_reward_amount))
-
-            const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
-            expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_added_total_reward_amount))
-
-            await expect(increase_tx)
-                .to.emit(wardenPledge, 'IncreasePledgeTargetVotes')
-                .withArgs(pledge_id, target_votes, new_target_votes);
-
-            await expect(increase_tx)
-                .to.emit(rewardToken1, 'Transfer')
-                .withArgs(
-                    creator.address,
-                    wardenPledge.address,
-                    real_added_total_reward_amount
-                );
-
-            await expect(increase_tx)
-                .to.emit(rewardToken1, 'Transfer')
-                .withArgs(
-                    creator.address,
-                    chest.address,
-                    real_added_fee_amount
-                );
-
-        });
-
-        it(' should fail if the pledge ID is invalid', async () => {
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id.add(3),
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('InvalidPledgeID')
-
-        });
-
-        it(' should fail if caller is not the Pledge creator', async () => {
-
-            await expect(
-                wardenPledge.connect(other_creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('NotPledgeCreator')
-
-            await expect(
-                wardenPledge.connect(receiver).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('NotPledgeCreator')
-
-            await expect(
-                wardenPledge.connect(admin).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('NotPledgeCreator')
-
-        });
-
-        it(' should fail if the Pledge was closed', async () => {
-
-            await wardenPledge.connect(creator).closePledge(pledge_id, creator.address)
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('PledgeClosed')
-
-        });
-
-        it(' should fail if Pledge is already expired', async () => {
-
-            await advanceTime(WEEK.mul(week_duration).toNumber())
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('ExpiredPledge')
-
-        });
-
-        it(' should fail if the new target vote is lower than previous one', async () => {
-
-            const smaller_target_votes = ethers.utils.parseEther("250000")
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    smaller_target_votes,
-                    added_max_total_reward_amount,
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('TargetVotesTooLoow')
-
-        });
-
-        it(' should fail if the given max total rewards does not cover the needed added rewards', async () => {
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
-                    added_max_total_reward_amount.div(2),
-                    added_max_fee_amount
-                )
-            ).to.be.revertedWith('IncorrectMaxTotalRewardAmount')
-
-        });
-
-        it(' should fail if the max fees is not enough', async () => {
-
-            await expect(
-                wardenPledge.connect(creator).increasePledgeTargetVotes(
-                    pledge_id,
-                    new_target_votes,
                     added_max_total_reward_amount,
                     added_max_fee_amount.div(2)
                 )
@@ -1827,6 +1691,8 @@ describe('Warden Pledge contract tests', () => {
 
         const new_reward_per_vote = ethers.utils.parseEther("0.000000025")
 
+        let pledge_vote_diff: BigNumber
+
         let added_max_total_reward_amount: BigNumber
         let added_max_fee_amount: BigNumber
 
@@ -1868,7 +1734,8 @@ describe('Warden Pledge contract tests', () => {
 
             const new_current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
             const reamining_duration = end_timestamp.sub(new_current_ts)
-            added_max_total_reward_amount = target_votes.mul(new_reward_per_vote.sub(reward_per_vote)).mul(reamining_duration).div(UNIT)
+            pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(new_reward_per_vote.sub(reward_per_vote)).mul(reamining_duration).div(UNIT)
             added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
             await rewardToken1.connect(creator).approve(wardenPledge.address, added_max_total_reward_amount.add(added_max_fee_amount))
@@ -1898,6 +1765,7 @@ describe('Warden Pledge contract tests', () => {
             const pledge_data = await wardenPledge.pledges(pledge_id)
 
             expect(pledge_data.targetVotes).to.be.eq(target_votes);
+            expect(pledge_data.votesDifference).to.be.eq(pledge_vote_diff);
             expect(pledge_data.rewardPerVote).to.be.eq(new_reward_per_vote);
             expect(pledge_data.receiver).to.be.eq(receiver.address);
             expect(pledge_data.rewardToken).to.be.eq(rewardToken1.address);
@@ -2455,64 +2323,6 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
-        it(' should allow to delegate after the Pledge target vote is increased', async () => {
-
-            await delegationBoost.connect(delegator1).approve(wardenPledge.address, deleg_amount1)
-
-            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
-            const boost_end_timestamp = getRoundedTimestamp(current_ts.add(WEEK.mul(boost_week_duration1)))
-
-            await wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, boost_end_timestamp)
-
-            const deleg_amount2 = ethers.utils.parseEther("525000")
-
-            await delegationBoost.connect(delegator2).approve(wardenPledge.address, deleg_amount2)
-
-            const boost_end_timestamp2 = getRoundedTimestamp(current_ts.add(WEEK.mul(boost_week_duration1)))
-
-            await expect(
-                wardenPledge.connect(delegator2).pledge(pledge_id, deleg_amount2, boost_end_timestamp2)
-            ).to.be.revertedWith('TargetVotesOverflow')
-
-            const new_target_votes = ethers.utils.parseEther("950000")
-
-            const increase_current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
-            const reamining_duration = end_timestamp.sub(increase_current_ts)
-            const added_max_total_reward_amount = (new_target_votes.sub(target_votes)).mul(reward_per_vote).mul(reamining_duration).div(UNIT)
-            const fee_ratio = await wardenPledge.protocalFeeRatio()
-            const added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
-
-            await rewardToken1.connect(creator).approve(wardenPledge.address, added_max_total_reward_amount.add(added_max_fee_amount))
-
-            await wardenPledge.connect(creator).increasePledgeTargetVotes(
-                pledge_id,
-                new_target_votes,
-                added_max_total_reward_amount,
-                added_max_fee_amount
-            )
-
-            const pledge_tx = await wardenPledge.connect(delegator2).pledge(pledge_id, deleg_amount2, boost_end_timestamp2)
-
-            const tx_timestamp = (await ethers.provider.getBlock((await pledge_tx).blockNumber || 0)).timestamp
-            const boost_duration = boost_end_timestamp2.sub(tx_timestamp)
-
-            const boost_slope = deleg_amount2.div(boost_duration)
-            const boost_bias = boost_duration.mul(boost_slope)
-
-            await expect(pledge_tx)
-                .to.emit(delegationBoost, 'Boost')
-                .withArgs(delegator2.address, receiver.address, boost_bias, boost_slope, tx_timestamp);
-
-            await expect(pledge_tx)
-                .to.emit(wardenPledge, 'Pledged')
-                .withArgs(pledge_id, delegator2.address, deleg_amount2, boost_end_timestamp2);
-
-            await advanceTime(WEEK.mul(boost_week_duration1.add(1)).toNumber())
-            await delegationBoost.connect(delegator1).checkpoint_user(delegator1.address)
-            await delegationBoost.connect(delegator2).checkpoint_user(delegator2.address)
-
-        });
-
         it(' should fail if delegeable balance is not enough', async () => {
 
             await delegationBoost.connect(delegator3).approve(wardenPledge.address, deleg_amount1)
@@ -2598,6 +2408,23 @@ describe('Warden Pledge contract tests', () => {
             await expect(
                 wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, pledge_end_timestamp.add(WEEK))
             ).to.be.revertedWith('InvalidEndTimestamp')
+
+        });
+
+        it(' should fail if not given enoug allowance to the contract', async () => {
+
+            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
+            const boost_end_timestamp = getRoundedTimestamp(current_ts.add(WEEK.mul(boost_week_duration1)))
+
+            await expect(
+                wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, boost_end_timestamp)
+            ).to.be.revertedWith('InsufficientAllowance')
+
+            await delegationBoost.connect(delegator1).approve(wardenPledge.address, deleg_amount1.div(2))
+
+            await expect(
+                wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, boost_end_timestamp)
+            ).to.be.revertedWith('InsufficientAllowance')
 
         });
 

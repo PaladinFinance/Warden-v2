@@ -98,7 +98,7 @@ library Errors {
     error InvalidPledgeID();
     error TargetVotesOverflow();
     error RewardsBalanceTooLow();
-
+    error InsufficientAllowance();
 
     // Math Errors
     error NumberExceed64Bits();
