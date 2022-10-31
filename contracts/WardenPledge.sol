@@ -126,6 +126,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Creates the contract, set the given base parameters
     * @param _votingEscrow address of the voting token to delegate
     * @param _delegationBoost address of the contract handling delegation
+    * @param _chestAddress address fo the contract receiving the fees
     * @param _minTargetVotes min amount of veToken to target in a Pledge
     */
     constructor(
@@ -134,6 +135,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address _chestAddress,
         uint256 _minTargetVotes
     ) {
+        if(_minTargetVotes == 0) revert Errors.NullValue();
+        if(_votingEscrow == address(0) || _delegationBoost == address(0) || _chestAddress == address(0)) revert Errors.ZeroAddress();
+
         votingEscrow = IVotingEscrow(_votingEscrow);
         delegationBoost = IBoostV2(_delegationBoost);
 
