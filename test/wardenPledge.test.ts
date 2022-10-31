@@ -2864,11 +2864,15 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
-        it(' should fail if given the addresse 0x0', async () => {
+        it(' should fail if given an invalid address', async () => {
+
+            await expect(
+                wardenPledge.connect(creator).closePledge(pledge_id, wardenPledge.address)
+            ).to.be.revertedWith('InvalidValue')
 
             await expect(
                 wardenPledge.connect(creator).closePledge(pledge_id, ethers.constants.AddressZero)
-            ).to.be.revertedWith('ZeroAddress')
+            ).to.be.revertedWith('InvalidValue')
 
         });
 

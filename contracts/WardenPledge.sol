@@ -461,7 +461,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
-        if(receiver == address(0)) revert Errors.ZeroAddress();
+        if(receiver == address(0) || receiver == address(this)) revert Errors.InvalidValue();
 
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeAlreadyClosed();
