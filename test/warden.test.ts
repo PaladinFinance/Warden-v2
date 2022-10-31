@@ -9,6 +9,7 @@ import { IVotingEscrow } from "../typechain/interfaces/IVotingEscrow";
 import { IVotingEscrow__factory } from "../typechain/factories/interfaces/IVotingEscrow__factory";
 import { IBoostV2 } from "../typechain/interfaces/IBoostV2";
 import { IBoostV2__factory } from "../typechain/factories/interfaces/IBoostV2__factory";
+import { BoostV2 } from "../typechain/tests/BoostV2.vy/BoostV2";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -24,9 +25,10 @@ let constants_path = "./utils/constant" // by default: veCRV
 const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
 if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constant"
 else if(VE_TOKEN === "VEANGLE") constants_path = "./utils/angle-constant"
+else if(VE_TOKEN === "VESDT") constants_path = "./utils/sdt-constant"
 
 
-const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VETOKEN_LOCKING_TIME, BLOCK_NUMBER } = require(constants_path);
+const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VETOKEN_LOCKING_TIME, BLOCK_NUMBER, OLD_BOOST_DELEGATON_ADDRESS } = require(constants_path);
 
 const WEEK = BigNumber.from(7 * 86400);
 const MAX_BPS = BigNumber.from(10000);
@@ -72,8 +74,6 @@ describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
 
         veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
 
-        delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
-
         await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
 
         await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
@@ -94,6 +94,18 @@ describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
 
 
     beforeEach(async () => {
+
+        if(BOOST_DELEGATION_ADDRESS != ethers.constants.AddressZero){
+            delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        }
+        else {
+            let boostFactory = await ethers.getContractFactory("BoostV2");
+            delegationBoost = (await boostFactory.connect(admin).deploy(
+                OLD_BOOST_DELEGATON_ADDRESS,
+                veToken.address
+            )) as IBoostV2;
+            await delegationBoost.deployed();
+        }
         
         warden = (await wardenFactory.connect(admin).deploy(
             BaseToken.address,
@@ -2219,7 +2231,7 @@ describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
         describe('withdrawERC20', async () => {
 
             const otherERC20_address = "0x6B175474E89094C44Da98b954EedeAC495271d0F"; // DAI
-            const otherERC20_holder = "0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503";
+            const otherERC20_holder = "0x8EB8a3b98659Cce290402893d0123abb75E3ab28";
             const erc20 = IERC20__factory.connect(otherERC20_address, provider);
 
             const lost_amount = ethers.utils.parseEther('100');

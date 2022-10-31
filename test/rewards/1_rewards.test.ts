@@ -9,6 +9,7 @@ import { IVotingEscrow } from "../../typechain/interfaces/IVotingEscrow";
 import { IVotingEscrow__factory } from "../../typechain/factories/interfaces/IVotingEscrow__factory";
 import { IBoostV2 } from "../../typechain/interfaces/IBoostV2";
 import { IBoostV2__factory } from "../../typechain/factories/interfaces/IBoostV2__factory";
+import { BoostV2 } from "../../typechain/tests/BoostV2.vy/BoostV2";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -24,6 +25,8 @@ let constants_path = "../utils/constant" // by default: veCRV
 const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
 if(VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constant"
 else if(VE_TOKEN === "VEANGLE") constants_path = "../utils/angle-constant"
+else if(VE_TOKEN === "VESDT") constants_path = "../utils/sdt-constant"
+
 
 const {
     TOKEN_ADDRESS,
@@ -33,7 +36,8 @@ const {
     VETOKEN_LOCKING_TIME,
     PAL_TOKEN_ADDRESS,
     PAL_HOLDER,
-    BLOCK_NUMBER
+    BLOCK_NUMBER,
+    OLD_BOOST_DELEGATON_ADDRESS
 } = require(constants_path);
 
 
@@ -85,7 +89,7 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
 
         veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
 
-        delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        //delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
         rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
     })
@@ -93,6 +97,18 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
 
     beforeEach(async () => {
         await resetFork(BLOCK_NUMBER);
+
+        if(BOOST_DELEGATION_ADDRESS != ethers.constants.AddressZero){
+            delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        }
+        else {
+            let boostFactory = await ethers.getContractFactory("BoostV2");
+            delegationBoost = (await boostFactory.connect(admin).deploy(
+                OLD_BOOST_DELEGATON_ADDRESS,
+                veToken.address
+            )) as IBoostV2;
+            await delegationBoost.deployed();
+        }
 
         warden = (await wardenFactory.connect(admin).deploy(
             BaseToken.address,

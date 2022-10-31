@@ -1,15 +1,17 @@
 import { ethers } from "hardhat";
 import { BigNumber } from "ethers";
 
-export const BLOCK_NUMBER = 0
+export const BLOCK_NUMBER = 15820830
 
-export const TOKEN_ADDRESS = "0x31429d1856aD1377A8A0079410B297e1a9e214c2"; //here : ANGLE
+export const TOKEN_ADDRESS = "0x73968b9a57c6E53d41345FD57a6E6ae27d6CDB2F"; //here : SDT
 
-export const VOTING_ESCROW_ADDRESS = "0x0C462Dbb9EC8cD1630f1728B2CFD2769d09f0dd5"; //here : veANGLE
+export const VOTING_ESCROW_ADDRESS = "0x0C30476f66034E11782938DF8e4384970B6c9e8a"; //here : veSDT
 
-export const BOOST_DELEGATION_ADDRESS = ""; //here : veBoost for veANGLE
+export const BOOST_DELEGATION_ADDRESS = "0x47B3262C96BB55A8D2E4F8E3Fed29D2eAB6dB6e9"; //here : veBoost for veSDT
 
-export const BIG_HOLDER = "0x2Fc443960971e53FD6223806F0114D5fAa8C7C4e"; //here : ANGLE holder
+export const OLD_BOOST_DELEGATON_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+export const BIG_HOLDER = "0x40B4B1a259d48d96F08F099Deb07eFad31A2eB2A"; //here : SDT holder
 
 export const VETOKEN_LOCKING_TIME = BigNumber.from(86400 * 365 * 4).div(86400 * 7).mul(86400 * 7)
 
