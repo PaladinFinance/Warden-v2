@@ -2632,6 +2632,68 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
+        it(' should delegate the all delegable balance if given 100%', async () => {
+
+            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
+
+            await delegationBoost.connect(delegator1).boost(
+                delegator2.address,
+                ethers.utils.parseEther('75000'),
+                getRoundedTimestamp(current_ts.add(WEEK.mul(10))),
+                delegator1.address
+            )
+
+            await delegationBoost.connect(delegator1).approve(wardenPledge.address, MAX_UINT)
+            const boost_end_timestamp = getRoundedTimestamp(current_ts.add(WEEK.mul(boost_week_duration)))
+
+            const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
+            const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
+            const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+
+            const pledge_tx = await wardenPledge.connect(delegator1).pledgePercent(pledge_id, full_deleg_percent, boost_end_timestamp)
+
+            const tx_block = (await pledge_tx).blockNumber
+            const tx_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
+            const boost_duration = boost_end_timestamp.sub(tx_timestamp)
+
+            const previous_boost_received = await delegationBoost.received_balance(delegator2.address, { blockTag: tx_block })
+            const expected_boost_amount = (await veCRV.balanceOf(delegator1.address, { blockTag: tx_block })).sub(previous_boost_received)
+
+            const boost_slope = expected_boost_amount.div(boost_duration)
+            const boost_bias = boost_duration.mul(boost_slope)
+
+            expect(await delegationBoost.delegated_balance(delegator1.address, { blockTag: tx_block })).to.be.eq(boost_bias.add(previous_boost_received))
+            expect(await delegationBoost.received_balance(receiver.address, { blockTag: tx_block })).to.be.eq(boost_bias)
+
+            // total amount of veBoost delegated (sum for each second of the Boost duration)
+            const boost_total_delegated_amount = boost_bias.mul(boost_duration).add(boost_bias).div(2)
+            const expected_boost_rewards = boost_total_delegated_amount.mul(reward_per_vote).div(UNIT)
+
+            const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
+            const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
+            const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+
+            expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
+            expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
+            expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+
+            await expect(pledge_tx)
+                .to.emit(rewardToken1, 'Transfer')
+                .withArgs(wardenPledge.address, delegator1.address, expected_boost_rewards);
+
+            await expect(pledge_tx)
+                .to.emit(delegationBoost, 'Boost')
+                .withArgs(delegator1.address, receiver.address, boost_bias, boost_slope, tx_timestamp);
+
+            await expect(pledge_tx)
+                .to.emit(wardenPledge, 'Pledged')
+                .withArgs(pledge_id, delegator1.address, expected_boost_amount, boost_end_timestamp);
+
+            await advanceTime(WEEK.mul(boost_week_duration.add(1)).toNumber())
+            await delegationBoost.connect(delegator1).checkpoint_user(delegator1.address)
+
+        });
+
         it(' should fail if given more than 10_000 BPS', async () => {
 
             await delegationBoost.connect(delegator1).approve(wardenPledge.address, MAX_UINT)

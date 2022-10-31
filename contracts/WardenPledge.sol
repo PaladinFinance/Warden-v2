@@ -212,7 +212,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     function pledgePercent(uint256 pledgeId, uint256 percent, uint256 endTimestamp) external whenNotPaused nonReentrant {
         if(percent > MAX_PCT) revert Errors.PercentOverMax();
 
-        uint256 amount = (votingEscrow.balanceOf(msg.sender) * percent) / MAX_PCT;
+        uint256 amount = (delegationBoost.delegable_balance(msg.sender) * percent) / MAX_PCT;
 
         _pledge(pledgeId, msg.sender, amount, endTimestamp);
         
