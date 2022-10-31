@@ -41,7 +41,7 @@ const MAX_UINT = ethers.constants.MaxUint256
 
 let wardenPledgeFactory: ContractFactory
 
-const min_target_votes = ethers.utils.parseEther('1000')
+const min_vote_diff = ethers.utils.parseEther('1000')
 
 const min_reward_per_vote = [
     ethers.utils.parseEther('0.000000005'),
@@ -123,7 +123,7 @@ describe('Warden Pledge contract tests', () => {
             veCRV.address,
             delegationBoost.address,
             chest.address,
-            min_target_votes
+            min_vote_diff
         )) as WardenPledge;
         await wardenPledge.deployed();
 
@@ -148,13 +148,13 @@ describe('Warden Pledge contract tests', () => {
         const wardenPledge_delegationBoost = await wardenPledge.delegationBoost();
         const wardenPledge_chestAddress = await wardenPledge.chestAddress();
         const wardenPledge_protocalFeeRatio = await wardenPledge.protocalFeeRatio();
-        const wardenPledge_minTargetVotes = await wardenPledge.minTargetVotes();
+        const wardenPledge_minTargetVotes = await wardenPledge.minVoteDiff();
 
         expect(wardenPledge_votingEscrow).to.be.eq(veCRV.address);
         expect(wardenPledge_delegationBoost).to.be.eq(delegationBoost.address);
         expect(wardenPledge_chestAddress).to.be.eq(chest.address);
         expect(wardenPledge_protocalFeeRatio).to.be.eq(250);
-        expect(wardenPledge_minTargetVotes).to.be.eq(min_target_votes);
+        expect(wardenPledge_minTargetVotes).to.be.eq(min_vote_diff);
 
         expect(await wardenPledge.UNIT()).to.be.eq(ethers.utils.parseEther('1'));
         expect(await wardenPledge.MAX_PCT()).to.be.eq(10000);
@@ -1163,7 +1163,7 @@ describe('Warden Pledge contract tests', () => {
 
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
-            const invalid_target_votes = min_target_votes.div(2)
+            const invalid_target_votes = min_vote_diff.div(2)
 
             await expect(
                 wardenPledge.connect(creator).createPledge(
@@ -2916,24 +2916,24 @@ describe('Warden Pledge contract tests', () => {
 
     describe('updateMinTargetVotes', async () => {
 
-        const new_min_target_votes = ethers.utils.parseEther('1500')
+        const new_min_vote_diff = ethers.utils.parseEther('1500')
 
         it(' should update correctly (& emit Event)', async () => {
 
-            const update_tx = await wardenPledge.connect(admin).updateMinTargetVotes(new_min_target_votes)
+            const update_tx = await wardenPledge.connect(admin).updateMinVoteDiff(new_min_vote_diff)
 
-            expect(await wardenPledge.minTargetVotes()).to.be.eq(new_min_target_votes)
+            expect(await wardenPledge.minVoteDiff()).to.be.eq(new_min_vote_diff)
 
             await expect(update_tx)
-                .to.emit(wardenPledge, 'MinTargetUpdated')
-                .withArgs(min_target_votes, new_min_target_votes);
+                .to.emit(wardenPledge, 'MinVoteDiffUpdated')
+                .withArgs(min_vote_diff, new_min_vote_diff);
 
         });
 
         it(' should fail if given incorrect params', async () => {
 
             await expect(
-                wardenPledge.connect(admin).updateMinTargetVotes(0)
+                wardenPledge.connect(admin).updateMinVoteDiff(0)
             ).to.be.revertedWith('InvalidValue')
 
         });
@@ -2941,7 +2941,7 @@ describe('Warden Pledge contract tests', () => {
         it(' should only be callable by admin', async () => {
 
             await expect(
-                wardenPledge.connect(creator).updateMinTargetVotes(new_min_target_votes)
+                wardenPledge.connect(creator).updateMinVoteDiff(new_min_vote_diff)
             ).to.be.revertedWith("Ownable: caller is not the owner")
 
         });

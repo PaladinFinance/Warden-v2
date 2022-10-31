@@ -72,8 +72,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /** @notice Address to receive protocol fees */
     address public chestAddress;
 
-    /** @notice Minimum target of votes for a Pledge */
-    uint256 public minTargetVotes;
+    /** @notice Minimum vote difference for a Pledge */
+    uint256 public minVoteDiff;
 
     /** @notice Minimum delegation time, taken from veBoost contract */
     uint256 public minDelegationTime = 1 weeks;
@@ -116,7 +116,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /** @notice Event emitted when xx */
     event PlatformFeeUpdated(uint256 oldfee, uint256 newFee);
     /** @notice Event emitted when xx */
-    event MinTargetUpdated(uint256 oldMinTarget, uint256 newMinTargetVotes);
+    event MinVoteDiffUpdated(uint256 oldMinVoteDiff, uint256 newMinVoteDiff);
 
 
 
@@ -127,15 +127,15 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param _votingEscrow address of the voting token to delegate
     * @param _delegationBoost address of the contract handling delegation
     * @param _chestAddress address fo the contract receiving the fees
-    * @param _minTargetVotes min amount of veToken to target in a Pledge
+    * @param _minVoteDiff min amount of veToken to target in a Pledge
     */
     constructor(
         address _votingEscrow,
         address _delegationBoost,
         address _chestAddress,
-        uint256 _minTargetVotes
+        uint256 _minVoteDiff
     ) {
-        if(_minTargetVotes == 0) revert Errors.NullValue();
+        if(_minVoteDiff == 0) revert Errors.NullValue();
         if(_votingEscrow == address(0) || _delegationBoost == address(0) || _chestAddress == address(0)) revert Errors.ZeroAddress();
 
         votingEscrow = IVotingEscrow(_votingEscrow);
@@ -143,7 +143,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         chestAddress = _chestAddress;
 
-        minTargetVotes = _minTargetVotes;
+        minVoteDiff = _minVoteDiff;
     }
 
     
@@ -312,7 +312,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address creator = msg.sender;
 
         if(receiver == address(0) || rewardToken == address(0)) revert Errors.ZeroAddress();
-        if(targetVotes < minTargetVotes) revert Errors.TargetVoteUnderMin();
         if(minAmountRewardToken[rewardToken] == 0) revert Errors.TokenNotWhitelisted();
         if(rewardPerVote < minAmountRewardToken[rewardToken]) revert Errors.RewardPerVoteTooLow();
 
@@ -327,6 +326,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // We ignore any delegated boost here because they might expire during the Pledge duration
         // (we can have a future version of this contract using adjusted_balance)
         vars.votesDifference = targetVotes - votingEscrow.balanceOf(receiver);
+        if(targetVotes < minVoteDiff) revert Errors.TargetVoteUnderMin();
 
         vars.totalRewardAmount = (rewardPerVote * vars.votesDifference * vars.duration) / UNIT;
         vars.feeAmount = (vars.totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
@@ -576,16 +576,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     }
 
     /**
-    * @notice Updates the new min target of votes for Pledges
-    * @dev Updates the new min target of votes for Pledges
-    * @param newMinTargetVotes New minimum target of votes
+    * @notice Updates the new min difference of votes for Pledges
+    * @dev Updates the new min difference of votes for Pledges
+    * @param newMinVoteDiff New minimum difference of votes
     */
-    function updateMinTargetVotes(uint256 newMinTargetVotes) external onlyOwner {
-        if(newMinTargetVotes == 0) revert Errors.InvalidValue();
-        uint256 oldMinTarget = minTargetVotes;
-        minTargetVotes = newMinTargetVotes;
+    function updateMinVoteDiff(uint256 newMinVoteDiff) external onlyOwner {
+        if(newMinVoteDiff == 0) revert Errors.InvalidValue();
+        uint256 oldMinTarget = minVoteDiff;
+        minVoteDiff = newMinVoteDiff;
 
-        emit MinTargetUpdated(oldMinTarget, newMinTargetVotes);
+        emit MinVoteDiffUpdated(oldMinTarget, newMinVoteDiff);
     }
 
     /**
