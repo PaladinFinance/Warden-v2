@@ -21,7 +21,12 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     // Constants :
     uint256 public constant UNIT = 1e18;
     uint256 public constant MAX_PCT = 10000;
-    uint256 public constant WEEK = 7 * 86400;
+    uint256 public constant WEEK = 604800;
+
+    /** @notice Minimum Pledge duration */
+    uint256 public constant MIN_PLEDGE_DURATION = 1 weeks;
+    /** @notice Minimum delegation time when pledging */
+    uint256 public constant MIN_DELEGATION_DURATION = 2 days;
 
     // Storage :
 
@@ -74,9 +79,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
     /** @notice Minimum vote difference for a Pledge */
     uint256 public minVoteDiff;
-
-    /** @notice Minimum delegation time, taken from veBoost contract */
-    uint256 public minDelegationTime = 1 weeks;
 
 
     // Events
@@ -239,6 +241,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         // Calculated the effective Pledge duration
         uint256 boostDuration = endTimestamp - block.timestamp;
+        if(boostDuration < MIN_DELEGATION_DURATION) revert Errors.DurationTooShort();
 
         // Check that the user has enough boost delegation available & set the correct allowance to this contract
         delegationBoost.checkpoint_user(user);
@@ -320,7 +323,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         CreatePledgeVars memory vars;
         vars.duration = endTimestamp - block.timestamp;
-        if(vars.duration < minDelegationTime) revert Errors.DurationTooShort();
+        if(vars.duration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
 
         // Get the missing votes for the given receiver to reach the target votes
         // We ignore any delegated boost here because they might expire during the Pledge duration
@@ -389,7 +392,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
 
         uint256 addedDuration = newEndTimestamp - oldEndTimestamp;
-        if(addedDuration < minDelegationTime) revert Errors.DurationTooShort();
+        if(addedDuration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
         uint256 totalRewardAmount = (pledgeParams.rewardPerVote * pledgeParams.votesDifference * addedDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();

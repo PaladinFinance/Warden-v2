@@ -159,6 +159,8 @@ describe('Warden Pledge contract tests', () => {
         expect(await wardenPledge.UNIT()).to.be.eq(ethers.utils.parseEther('1'));
         expect(await wardenPledge.MAX_PCT()).to.be.eq(10000);
         expect(await wardenPledge.WEEK()).to.be.eq(604800);
+        expect(await wardenPledge.MIN_PLEDGE_DURATION()).to.be.eq(604800);
+        expect(await wardenPledge.MIN_DELEGATION_DURATION()).to.be.eq(172800);
 
         expect(await wardenPledge.pledgesIndex()).to.be.eq(0);
 
