@@ -3222,8 +3222,12 @@ describe('Warden Pledge contract tests', () => {
         it(' should fail if given incorrect params', async () => {
 
             await expect(
+                wardenPledge.connect(admin).updateChest(wardenPledge.address)
+            ).to.be.revertedWith('InvalidAddress')
+
+            await expect(
                 wardenPledge.connect(admin).updateChest(ethers.constants.AddressZero)
-            ).to.be.revertedWith('ZeroAddress')
+            ).to.be.revertedWith('InvalidAddress')
 
         });
 

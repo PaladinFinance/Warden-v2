@@ -597,7 +597,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param chest Address of the new Chest
     */
     function updateChest(address chest) external onlyOwner {
-        if(chest == address(0)) revert Errors.ZeroAddress();
+        if(chest == address(0) || chest == address(this)) revert Errors.InvalidAddress();
         address oldChest = chestAddress;
         chestAddress = chest;
 
