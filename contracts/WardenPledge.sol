@@ -452,38 +452,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     }
 
     /**
-    * @notice Retrieves all non distributed rewards from a closed Pledge
-    * @dev Retrieves all non distributed rewards from a closed Pledge & send them to the given receiver
-    * @param pledgeId ID fo the Pledge
-    * @param receiver Address to receive the remaining rewards
-    */
-    function retrievePledgeRewards(uint256 pledgeId, address receiver) external nonReentrant {
-        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
-        address creator = pledgeOwner[pledgeId];
-        if(msg.sender != creator) revert Errors.NotPledgeCreator();
-        if(receiver == address(0)) revert Errors.ZeroAddress();
-
-        Pledge storage pledgeParams = pledges[pledgeId];
-        if(pledgeParams.endTimestamp > block.timestamp) revert Errors.PledgeNotExpired();
-
-        // Get the current remaining amount of rewards not distributed for the Pledge
-        uint256 remainingAmount = pledgeAvailableRewardAmounts[pledgeId];
-
-        // Set the Pledge as Closed
-        if(!pledgeParams.closed) pledgeParams.closed = true;
-
-        if(remainingAmount > 0) {
-            // Transfer the non used rewards and reset storage
-            pledgeAvailableRewardAmounts[pledgeId] = 0;
-
-            IERC20(pledgeParams.rewardToken).safeTransfer(receiver, remainingAmount);
-
-            emit RetrievedPledgeRewards(pledgeId, receiver, remainingAmount);
-
-        }
-    }
-
-    /**
     * @notice Closes a Pledge and retrieves all non distributed rewards from a Pledge
     * @dev Closes a Pledge and retrieves all non distributed rewards from a Pledge & send them to the given receiver
     * @param pledgeId ID fo the Pledge to close
@@ -497,7 +465,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeAlreadyClosed();
-        if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
 
         // Set the Pledge as Closed
         pledgeParams.closed = true;
