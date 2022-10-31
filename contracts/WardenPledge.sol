@@ -594,7 +594,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param newFee New fee ratio
     */
     function updatePlatformFee(uint256 newFee) external onlyOwner {
-        if(newFee > 500) revert Errors.InvalidValue();
+        if(newFee > 500 || newFee == 0) revert Errors.InvalidValue();
         uint256 oldfee = protocalFeeRatio;
         protocalFeeRatio = newFee;
 

@@ -2972,6 +2972,10 @@ describe('Warden Pledge contract tests', () => {
                 wardenPledge.connect(admin).updatePlatformFee(600)
             ).to.be.revertedWith('InvalidValue')
 
+            await expect(
+                wardenPledge.connect(admin).updatePlatformFee(0)
+            ).to.be.revertedWith('InvalidValue')
+
         });
 
         it(' should only be callable by admin', async () => {
