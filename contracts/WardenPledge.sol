@@ -15,7 +15,7 @@ import "./utils/Errors.sol";
 /*
     Delegation market (Pledge version) based on Curve Boost V2 contract
 */
-contract WardenPledge is Ownable, Pausable, ReentrancyGuard {
+contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Constants :
