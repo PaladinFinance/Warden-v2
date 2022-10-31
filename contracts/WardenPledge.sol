@@ -457,7 +457,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param pledgeId ID fo the Pledge
     * @param receiver Address to receive the remaining rewards
     */
-    function retrievePledgeRewards(uint256 pledgeId, address receiver) external whenNotPaused nonReentrant {
+    function retrievePledgeRewards(uint256 pledgeId, address receiver) external nonReentrant {
         if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
@@ -489,7 +489,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param pledgeId ID fo the Pledge to close
     * @param receiver Address to receive the remaining rewards
     */
-    function closePledge(uint256 pledgeId, address receiver) external whenNotPaused nonReentrant {
+    function closePledge(uint256 pledgeId, address receiver) external nonReentrant {
         if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
