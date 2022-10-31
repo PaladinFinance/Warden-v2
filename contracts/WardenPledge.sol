@@ -382,6 +382,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
+        if(minAmountRewardToken[pledgeParams.rewardToken] == 0) revert Errors.TokenNotWhitelisted();
+
         if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
         uint256 oldEndTimestamp = pledgeParams.endTimestamp;
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
@@ -428,6 +430,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
+        if(minAmountRewardToken[pledgeParams.rewardToken] == 0) revert Errors.TokenNotWhitelisted();
 
         uint256 oldRewardPerVote = pledgeParams.rewardPerVote;
         if(newRewardPerVote <= oldRewardPerVote) revert Errors.RewardsPerVotesTooLow();
