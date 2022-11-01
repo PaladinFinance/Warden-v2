@@ -386,7 +386,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 oldEndTimestamp = pledgeParams.endTimestamp;
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(oldEndTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
-        if(minAmountRewardToken[pledgeParams.rewardToken] == 0) revert Errors.TokenNotWhitelisted();
+        address _rewardToken = pledgeParams.rewardToken;
+        if(minAmountRewardToken[_rewardToken] == 0) revert Errors.TokenNotWhitelisted();
+        if(pledgeParams.rewardPerVote < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
 
         if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
@@ -400,7 +402,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
 
         // Pull all the rewards in this contract
-        address _rewardToken = pledgeParams.rewardToken;
         IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
         // And transfer the fees from the Pledge creator to the Chest contract
         IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
@@ -434,7 +435,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
-        if(minAmountRewardToken[pledgeParams.rewardToken] == 0) revert Errors.TokenNotWhitelisted();
+        address _rewardToken = pledgeParams.rewardToken;
+        if(minAmountRewardToken[_rewardToken] == 0) revert Errors.TokenNotWhitelisted();
+        if(pledgeParams.rewardPerVote < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
 
         uint256 oldRewardPerVote = pledgeParams.rewardPerVote;
         if(newRewardPerVote <= oldRewardPerVote) revert Errors.RewardsPerVotesTooLow();
@@ -446,7 +449,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
-        address _rewardToken = pledgeParams.rewardToken;
         IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
         // And transfer the fees from the Pledge creator to the Chest contract
         IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);

@@ -153,7 +153,7 @@ describe('Warden Pledge contract tests', () => {
         expect(wardenPledge_votingEscrow).to.be.eq(veCRV.address);
         expect(wardenPledge_delegationBoost).to.be.eq(delegationBoost.address);
         expect(wardenPledge_chestAddress).to.be.eq(chest.address);
-        expect(wardenPledge_protocalFeeRatio).to.be.eq(250);
+        expect(wardenPledge_protocalFeeRatio).to.be.eq(100);
         expect(wardenPledge_minTargetVotes).to.be.eq(min_vote_diff);
 
         expect(await wardenPledge.UNIT()).to.be.eq(ethers.utils.parseEther('1'));
@@ -1591,6 +1591,31 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
+        it(' should fail if reward per vote is lower than the new minimum', async () => {
+
+            await wardenPledge.connect(admin).updateRewardToken(rewardToken1.address, reward_per_vote.mul(2))
+
+            new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
+            new_end_timestamp = getRoundedTimestamp(new_end_timestamp)
+            const added_duration = new_end_timestamp.sub(end_timestamp)
+            const pledge_vote_diff = (await wardenPledge.pledges(pledge_id)).votesDifference
+            added_max_total_reward_amount = pledge_vote_diff.mul(reward_per_vote).mul(added_duration).div(UNIT)
+            const fee_ratio = await wardenPledge.protocolFeeRatio()
+            added_max_fee_amount = added_max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
+
+            await rewardToken1.connect(creator).approve(wardenPledge.address, added_max_total_reward_amount.add(added_max_fee_amount))
+
+            await expect(
+                wardenPledge.connect(creator).extendPledge(
+                    pledge_id,
+                    new_end_timestamp,
+                    added_max_total_reward_amount,
+                    added_max_fee_amount
+                )
+            ).to.be.revertedWith('RewardPerVoteTooLow')
+
+        });
+
         it(' should fail if the new end timestamp is less than the previous one', async () => {
 
             new_end_timestamp = end_timestamp.add(WEEK.mul(added_week_duration))
@@ -1926,6 +1951,21 @@ describe('Warden Pledge contract tests', () => {
                     added_max_fee_amount
                 )
             ).to.be.revertedWith('TokenNotWhitelisted')
+
+        });
+
+        it(' should fail if reward per vote is lower than the new minimum', async () => {
+
+            await wardenPledge.connect(admin).updateRewardToken(rewardToken1.address, reward_per_vote.mul(2))
+
+            await expect(
+                wardenPledge.connect(creator).increasePledgeRewardPerVote(
+                    pledge_id,
+                    new_reward_per_vote,
+                    added_max_total_reward_amount,
+                    added_max_fee_amount
+                )
+            ).to.be.revertedWith('RewardPerVoteTooLow')
 
         });
 
