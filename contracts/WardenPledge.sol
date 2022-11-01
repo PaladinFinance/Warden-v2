@@ -60,7 +60,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     // sorted by Pledge index
     mapping(uint256 => uint256) public pledgeAvailableRewardAmounts;
 
-
     /** @notice Address of the votingToken to delegate */
     IVotingEscrow public immutable votingEscrow;
     /** @notice Address of the Delegation Boost contract */
@@ -70,6 +69,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /** @notice Minimum amount of reward per vote for each reward token */
     // Also used to whitelist the tokens for rewards
     mapping(address => uint256) public minAmountRewardToken;
+    /** @notice Total amount held in Pledge for the reward amount */
+    mapping(address => uint256) public rewardTokenTotalAmount;
 
 
     /** @notice ratio of fees to pay the protocol (in BPS) */
@@ -270,11 +271,13 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // Then we can calculate the total amount of rewards for this Boost
         uint256 rewardAmount = (totalDelegatedAmount * pledgeParams.rewardPerVote) / UNIT;
 
+        address _rewardToken = pledgeParams.rewardToken;
         if(rewardAmount > pledgeAvailableRewardAmounts[pledgeId]) revert Errors.RewardsBalanceTooLow();
         pledgeAvailableRewardAmounts[pledgeId] -= rewardAmount;
+        rewardTokenTotalAmount[_rewardToken] -= rewardAmount;
 
         // Send the rewards to the user
-        IERC20(pledgeParams.rewardToken).safeTransfer(user, rewardAmount);
+        IERC20(_rewardToken).safeTransfer(user, rewardAmount);
 
         emit Pledged(pledgeId, user, bias, endTimestamp);
     }
@@ -301,7 +304,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param maxTotalRewardAmount Maximum total reward amount allowed to be pulled by this contract
     * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     * @return uint256: Newly created Pledge ID
-    */
+    */ 
     function createPledge(
         address receiver,
         address rewardToken,
@@ -345,6 +348,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         // Add the total rewards as available for the Pledge & write Pledge parameters in storage
         pledgeAvailableRewardAmounts[vars.newPledgeID] = vars.totalRewardAmount;
+        rewardTokenTotalAmount[rewardToken] += vars.totalRewardAmount;
 
         pledges.push(Pledge(
             targetVotes,
@@ -410,6 +414,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         pledgeParams.endTimestamp = safe64(newEndTimestamp);
 
         pledgeAvailableRewardAmounts[pledgeId] += totalRewardAmount;
+        rewardTokenTotalAmount[_rewardToken] += totalRewardAmount;
 
         emit ExtendPledgeDuration(pledgeId, oldEndTimestamp, newEndTimestamp);
     }
@@ -457,6 +462,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         pledgeParams.rewardPerVote = newRewardPerVote;
 
         pledgeAvailableRewardAmounts[pledgeId] += totalRewardAmount;
+        rewardTokenTotalAmount[_rewardToken] += totalRewardAmount;
 
         emit IncreasePledgeRewardPerVote(pledgeId, oldRewardPerVote, newRewardPerVote);
     }
@@ -485,8 +491,10 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(remainingAmount != 0) {
             // Transfer the non-used rewards and reset storage
             pledgeAvailableRewardAmounts[pledgeId] = 0;
+            address _rewardToken = pledgeParams.rewardToken;
+            rewardTokenTotalAmount[_rewardToken] -= remainingAmount;
 
-            IERC20(pledgeParams.rewardToken).safeTransfer(receiver, remainingAmount);
+            IERC20(_rewardToken).safeTransfer(receiver, remainingAmount);
 
             emit RetrievedPledgeRewards(pledgeId, receiver, remainingAmount);
 
@@ -633,12 +641,21 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @return bool: success
     */
     function recoverERC20(address token) external nonReentrant onlyOwner returns(bool) {
-        if(minAmountRewardToken[token] != 0) revert Errors.CannotRecoverToken();
 
-        uint256 amount = IERC20(token).balanceOf(address(this));
-        if(amount == 0) revert Errors.NullValue();
-        IERC20(token).safeTransfer(owner(), amount);
+        uint256 currentBalance = IERC20(token).balanceOf(address(this));
+        if(currentBalance == 0) revert Errors.NullValue();
+        uint256 amount;
 
+        // Total amount of the token owned by the Pledges
+        uint256 pledgesBalance = rewardTokenTotalAmount[token];
+
+        if(pledgesBalance >= currentBalance) revert Errors.CannotRecoverToken();
+        amount = currentBalance - pledgesBalance;
+
+        if(amount != 0) {
+            IERC20(token).safeTransfer(owner(), amount);
+        }
+        
         return true;
     }
 

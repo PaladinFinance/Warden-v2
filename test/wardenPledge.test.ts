@@ -603,6 +603,7 @@ describe('Warden Pledge contract tests', () => {
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const create_tx = await wardenPledge.connect(creator).createPledge(
                 receiver.address,
@@ -615,6 +616,7 @@ describe('Warden Pledge contract tests', () => {
             )
 
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const tx_timestamp = (await ethers.provider.getBlock((await create_tx).blockNumber || 0)).timestamp
             const real_duration = end_timestamp.sub(tx_timestamp)
@@ -623,6 +625,7 @@ describe('Warden Pledge contract tests', () => {
             const real_fee_amount = real_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
 
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.add(real_total_reward_amount))
 
             await expect(create_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -771,6 +774,7 @@ describe('Warden Pledge contract tests', () => {
             await rewardToken2.connect(creator).approve(wardenPledge.address, max_total_reward_amount2.add(max_fee_amount2))
 
             const old_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
+            const old_rewardToken2_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
 
             const expected_id = await wardenPledge.nextPledgeIndex();
 
@@ -810,6 +814,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount2))
+
+            const new_rewardToken2_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
+            expect(new_rewardToken2_total_amount).to.be.eq(old_rewardToken2_total_amount.add(real_total_reward_amount2))
 
             await expect(create_tx)
                 .to.emit(wardenPledge, 'NewPledge')
@@ -868,6 +875,7 @@ describe('Warden Pledge contract tests', () => {
             await rewardToken2.connect(other_creator).approve(wardenPledge.address, max_total_reward_amount2.add(max_fee_amount2))
 
             const old_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
+            const old_rewardToken2_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
 
             const expected_id = await wardenPledge.nextPledgeIndex();
 
@@ -907,6 +915,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount2))
+
+            const new_rewardToken2_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
+            expect(new_rewardToken2_total_amount).to.be.eq(old_rewardToken2_total_amount.add(real_total_reward_amount2))
 
             await expect(create_tx)
                 .to.emit(wardenPledge, 'NewPledge')
@@ -965,6 +976,7 @@ describe('Warden Pledge contract tests', () => {
             await rewardToken1.connect(other_creator).approve(wardenPledge.address, max_total_reward_amount2.add(max_fee_amount2))
 
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken1_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const expected_id = await wardenPledge.nextPledgeIndex();
 
@@ -1004,6 +1016,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount2))
+
+            const new_rewardToken1_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
+            expect(new_rewardToken1_total_amount).to.be.eq(old_rewardToken1_total_amount.add(real_total_reward_amount2))
 
             await expect(create_tx)
                 .to.emit(wardenPledge, 'NewPledge')
@@ -1062,6 +1077,7 @@ describe('Warden Pledge contract tests', () => {
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount2.add(max_fee_amount2))
 
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken1_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const expected_id = await wardenPledge.nextPledgeIndex();
 
@@ -1101,6 +1117,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_total_reward_amount2))
+
+            const new_rewardToken1_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
+            expect(new_rewardToken1_total_amount).to.be.eq(old_rewardToken1_total_amount.add(real_total_reward_amount2))
 
             await expect(create_tx)
                 .to.emit(wardenPledge, 'NewPledge')
@@ -1399,6 +1418,7 @@ describe('Warden Pledge contract tests', () => {
             const old_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
 
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             await rewardToken1.connect(creator).approve(wardenPledge.address, added_max_total_reward_amount.add(added_max_fee_amount))
 
@@ -1429,6 +1449,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_added_total_reward_amount))
+
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.add(real_added_total_reward_amount))
 
             await expect(extend_tx)
                 .to.emit(wardenPledge, 'ExtendPledgeDuration')
@@ -1811,6 +1834,7 @@ describe('Warden Pledge contract tests', () => {
             const old_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
 
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const increase_tx = await wardenPledge.connect(creator).increasePledgeRewardPerVote(
                 pledge_id,
@@ -1842,6 +1866,9 @@ describe('Warden Pledge contract tests', () => {
 
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.add(real_added_total_reward_amount))
+
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.add(real_added_total_reward_amount))
 
             await expect(increase_tx)
                 .to.emit(wardenPledge, 'IncreasePledgeRewardPerVote')
@@ -2105,6 +2132,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, boost_end_timestamp)
 
@@ -2121,10 +2149,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2157,6 +2187,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator2.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator2).pledge(pledge_id, deleg_amount2, boost_end_timestamp2)
 
@@ -2176,10 +2207,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator2.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2246,6 +2279,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id2)
             const old_delegator_balance = await rewardToken2.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledge(pledge_id2, deleg_amount2, boost_end_timestamp2)
 
@@ -2262,10 +2296,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id2)
             const new_delegator_balance = await rewardToken2.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken2, 'Transfer')
@@ -2293,6 +2329,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, 0)
 
@@ -2313,10 +2350,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2362,6 +2401,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledge(pledge_id, deleg_amount1, boost_end_timestamp)
 
@@ -2378,10 +2418,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2586,6 +2628,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledgePercent(pledge_id, deleg_percent, boost_end_timestamp)
 
@@ -2608,10 +2651,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2640,6 +2685,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledgePercent(pledge_id, full_deleg_percent, boost_end_timestamp)
 
@@ -2662,10 +2708,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2701,6 +2749,7 @@ describe('Warden Pledge contract tests', () => {
             const old_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const pledge_tx = await wardenPledge.connect(delegator1).pledgePercent(pledge_id, full_deleg_percent, boost_end_timestamp)
 
@@ -2724,10 +2773,12 @@ describe('Warden Pledge contract tests', () => {
             const new_pledge_remaining_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const new_delegator_balance = await rewardToken1.balanceOf(delegator1.address)
             const new_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             expect(new_pledge_remaining_rewards).to.be.eq(old_pledge_remaining_rewards.sub(expected_boost_rewards))
             expect(new_delegator_balance).to.be.eq(old_delegator_balance.add(expected_boost_rewards))
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(expected_boost_rewards))
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(expected_boost_rewards))
 
             await expect(pledge_tx)
                 .to.emit(rewardToken1, 'Transfer')
@@ -2838,6 +2889,7 @@ describe('Warden Pledge contract tests', () => {
             const non_distributed_rewards = await wardenPledge.pledgeAvailableRewardAmounts(pledge_id)
             const old_wardenPledge_balance = await rewardToken1.balanceOf(wardenPledge.address)
             const old_creator_balance = await rewardToken1.balanceOf(creator.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
 
             const close_tx = await wardenPledge.connect(creator).closePledge(pledge_id, creator.address)
 
@@ -2850,6 +2902,9 @@ describe('Warden Pledge contract tests', () => {
 
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(non_distributed_rewards))
             expect(new_creator_balance).to.be.eq(old_creator_balance.add(non_distributed_rewards))
+
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken1.address)
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(non_distributed_rewards))
 
             await expect(close_tx)
                 .to.emit(wardenPledge, 'ClosePledge')
@@ -2901,6 +2956,7 @@ describe('Warden Pledge contract tests', () => {
 
             const old_wardenPledge_balance = await rewardToken2.balanceOf(wardenPledge.address)
             const old_creator_balance = await rewardToken2.balanceOf(creator.address)
+            const old_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
 
             const close_tx = await wardenPledge.connect(creator).closePledge(pledge_id2, creator.address)
 
@@ -2913,6 +2969,9 @@ describe('Warden Pledge contract tests', () => {
 
             expect(new_wardenPledge_balance).to.be.eq(old_wardenPledge_balance.sub(real_total_reward_amount))
             expect(new_creator_balance).to.be.eq(old_creator_balance.add(real_total_reward_amount))
+
+            const new_rewardToken_total_amount = await wardenPledge.rewardTokenTotalAmount(rewardToken2.address)
+            expect(new_rewardToken_total_amount).to.be.eq(old_rewardToken_total_amount.sub(real_total_reward_amount))
 
             await expect(close_tx)
                 .to.emit(wardenPledge, 'ClosePledge')
@@ -3253,14 +3312,9 @@ describe('Warden Pledge contract tests', () => {
 
         const lost_amount = ethers.utils.parseEther('1000');
 
-        beforeEach(async () => {
+        it(' should retrieve the lost tokens and send it to the admin', async () => {
 
             await CRV.connect(admin).transfer(wardenPledge.address, lost_amount)
-
-        });
-
-
-        it(' should retrieve the lost tokens and send it to the admin', async () => {
 
             const oldBalance = await CRV.balanceOf(admin.address);
 
@@ -3272,17 +3326,72 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
-        it(' should fail for whitelisted tokens', async () => {
+        it(' should retrieve whitelisted tokens not used in Pledges', async () => {
 
             await wardenPledge.connect(admin).addRewardToken(CRV.address, ethers.utils.parseEther('0.000005'))
 
+            await CRV.connect(admin).transfer(wardenPledge.address, lost_amount)
+
+            const oldBalance = await CRV.balanceOf(admin.address);
+
+            await wardenPledge.connect(admin).recoverERC20(CRV.address)
+
+            const newBalance = await CRV.balanceOf(admin.address);
+
+            expect(newBalance.sub(oldBalance)).to.be.eq(lost_amount)
+
+        });
+
+        it(' should fail for whitelisted tokens used by Pledges', async () => {
+
+            await wardenPledge.connect(admin).addRewardToken(rewardToken1.address, min_reward_per_vote[0])
+
+            const target_votes = ethers.utils.parseEther("750000")
+            const reward_per_vote = ethers.utils.parseEther('0.000000015')
+            const week_duration = BigNumber.from(6)
+
+            let end_timestamp: BigNumber
+            let max_total_reward_amount: BigNumber
+            let max_fee_amount: BigNumber
+
+            let pledge_id: BigNumber
+
+            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
+            end_timestamp = current_ts.add(WEEK.mul(week_duration))
+            // rounding down, so it will end before the exact week_duration given
+            end_timestamp = getRoundedTimestamp(end_timestamp)
+            const duration = end_timestamp.sub(current_ts)
+            max_total_reward_amount = target_votes.mul(reward_per_vote).mul(duration).div(UNIT)
+            const fee_ratio = await wardenPledge.protocolFeeRatio()
+            max_fee_amount = max_total_reward_amount.mul(fee_ratio).div(MAX_BPS)
+
+            await rewardToken1.connect(admin).transfer(creator.address, max_total_reward_amount.add(max_fee_amount).mul(2))
+
+            await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
+
+            pledge_id = await wardenPledge.nextPledgeIndex();
+
+            await wardenPledge.connect(creator).createPledge(
+                receiver.address,
+                rewardToken1.address,
+                target_votes,
+                reward_per_vote,
+                end_timestamp,
+                max_total_reward_amount,
+                max_fee_amount
+            )
+
+            await advanceTime(WEEK.mul(1).toNumber())
+
             await expect(
-                wardenPledge.connect(admin).recoverERC20(CRV.address)
+                wardenPledge.connect(admin).recoverERC20(rewardToken1.address)
             ).to.be.revertedWith('CannotRecoverToken')
 
         });
 
         it(' should block non-admin caller', async () => {
+
+            await CRV.connect(admin).transfer(wardenPledge.address, lost_amount)
 
             await expect(
                 wardenPledge.connect(creator).recoverERC20(CRV.address)
