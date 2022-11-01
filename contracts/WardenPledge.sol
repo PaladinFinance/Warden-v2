@@ -34,7 +34,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // Target amount of veCRV (balance scaled by Boost v2, fetched as adjusted_balance)
         uint256 targetVotes;
         // Difference of votes between the target and the receiver balance at the start of the Pledge
-        // (used for later extend/increase of some parameters the Pledge)
+        // (used for later extension/increase of some parameters of the Pledge)
         uint256 votesDifference;
         // Price per vote per second, set by the owner
         uint256 rewardPerVote;
@@ -44,7 +44,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address rewardToken;
         // Timestamp of end of the Pledge
         uint64 endTimestamp;
-        // Set to true if the Pledge is canceled, or when closed after the endTimestamp
+        // Set to true if the Pledge is cancelled, or when closed after the endTimestamp
         bool closed;
     }
 
@@ -62,9 +62,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
 
     /** @notice Address of the votingToken to delegate */
-    IVotingEscrow public votingEscrow;
+    IVotingEscrow public immutable votingEscrow;
     /** @notice Address of the Delegation Boost contract */
-    IBoostV2 public delegationBoost;
+    IBoostV2 public immutable delegationBoost;
 
 
     /** @notice Minimum amount of reward per vote for each reward token */
@@ -73,7 +73,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
 
     /** @notice ratio of fees to pay the protocol (in BPS) */
-    uint256 public protocalFeeRatio = 250; //bps
+    uint256 public protocolFeeRatio = 250; //bps
     /** @notice Address to receive protocol fees */
     address public chestAddress;
 
@@ -83,41 +83,39 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
     // Events
 
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a new Pledge is created */
     event NewPledge(
-        address creator,
-        address receiver,
-        address rewardToken,
+        address indexed creator,
+        address indexed receiver,
+        address indexed rewardToken,
         uint256 targetVotes,
         uint256 rewardPerVote,
         uint256 endTimestamp
     );
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a Pledge duration is extended */
     event ExtendPledgeDuration(uint256 indexed pledgeId, uint256 oldEndTimestamp, uint256 newEndTimestamp);
-    /** @notice Event emitted when xx */
-    event IncreasePledgeTargetVotes(uint256 indexed pledgeId, uint256 oldTargetVotes, uint256 newTargetVotes);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a Pledge reward per vote is increased */
     event IncreasePledgeRewardPerVote(uint256 indexed pledgeId, uint256 oldRewardPerVote, uint256 newRewardPerVote);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a Pledge is closed */
     event ClosePledge(uint256 indexed pledgeId);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when rewards are retrieved from a closed Pledge */
     event RetrievedPledgeRewards(uint256 indexed pledgeId, address receiver, uint256 amount);
 
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when an user delegate to a Pledge */
     event Pledged(uint256 indexed pledgeId, address indexed user, uint256 amount, uint256 endTimestamp);
 
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a new reward token is added to the list */
     event NewRewardToken(address indexed token, uint256 minRewardPerSecond);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a reward token parameter is updated */
     event UpdateRewardToken(address indexed token, uint256 minRewardPerSecond);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when a reward token is removed from the list */
     event RemoveRewardToken(address indexed token);
 
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when the address for the Chest is updated */
     event ChestUpdated(address oldChest, address newChest);
-    /** @notice Event emitted when xx */
-    event PlatformFeeUpdated(uint256 oldfee, uint256 newFee);
-    /** @notice Event emitted when xx */
+    /** @notice Event emitted when the platform fee is updated */
+    event PlatformFeeUpdated(uint256 oldFee, uint256 newFee);
+    /** @notice Event emitted when the minimum vote difference value is updated */
     event MinVoteDiffUpdated(uint256 oldMinVoteDiff, uint256 newMinVoteDiff);
 
 
@@ -128,7 +126,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Creates the contract, set the given base parameters
     * @param _votingEscrow address of the voting token to delegate
     * @param _delegationBoost address of the contract handling delegation
-    * @param _chestAddress address fo the contract receiving the fees
+    * @param _chestAddress address of the contract receiving the fees
     * @param _minVoteDiff min amount of veToken to target in a Pledge
     */
     constructor(
@@ -137,7 +135,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address _chestAddress,
         uint256 _minVoteDiff
     ) {
-        if(_minVoteDiff == 0) revert Errors.NullValue();
+        // We want that value to be at minimum 1e18, to avoid any rounding issues
+        if(_minVoteDiff < UNIT) revert Errors.InvalidValue();
         if(_votingEscrow == address(0) || _delegationBoost == address(0) || _chestAddress == address(0)) revert Errors.ZeroAddress();
 
         votingEscrow = IVotingEscrow(_votingEscrow);
@@ -156,7 +155,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Amount of Pledges listed in this contract
     * @return uint256: Amount of Pledges listed in this contract
     */
-    function pledgesIndex() public view returns(uint256){
+    function nextPledgeIndex() public view returns(uint256){
         return pledges.length;
     }
 
@@ -198,7 +197,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param amount Amount to delegate
     * @param endTimestamp End of delegation
     */
-    function pledge(uint256 pledgeId, uint256 amount, uint256 endTimestamp) external whenNotPaused nonReentrant {
+    function pledge(uint256 pledgeId, uint256 amount, uint256 endTimestamp) external nonReentrant whenNotPaused {
         _pledge(pledgeId, msg.sender, amount, endTimestamp);
     }
 
@@ -209,9 +208,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param percent Percent of balance to delegate
     * @param endTimestamp End of delegation
     */
-    function pledgePercent(uint256 pledgeId, uint256 percent, uint256 endTimestamp) external whenNotPaused nonReentrant {
+    function pledgePercent(uint256 pledgeId, uint256 percent, uint256 endTimestamp) external nonReentrant whenNotPaused {
         if(percent > MAX_PCT) revert Errors.PercentOverMax();
-
         uint256 amount = (delegationBoost.delegable_balance(msg.sender) * percent) / MAX_PCT;
 
         _pledge(pledgeId, msg.sender, amount, endTimestamp);
@@ -226,16 +224,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param endTimestamp End of delegation
     */
     function _pledge(uint256 pledgeId, address user, uint256 amount, uint256 endTimestamp) internal {
-        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
         if(amount == 0) revert Errors.NullValue();
+        if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
 
         // Load Pledge parameters & check the Pledge is still active
-        Pledge memory pledgeParams = pledges[pledgeId];
+        Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
         if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
 
         // To join until the end of the pledge, user can input 0 as endTimestamp
-        // so it's override by the Pledge's endTimestamp
+        // so it's overridden by the Pledge's endTimestamp
         if(endTimestamp == 0) endTimestamp = pledgeParams.endTimestamp;
         if(endTimestamp > pledgeParams.endTimestamp || endTimestamp != _getRoundedTimestamp(endTimestamp)) revert Errors.InvalidEndTimestamp();
 
@@ -244,22 +242,23 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(boostDuration < MIN_DELEGATION_DURATION) revert Errors.DurationTooShort();
 
         // Check that the user has enough boost delegation available & set the correct allowance to this contract
-        delegationBoost.checkpoint_user(user);
-        if(delegationBoost.allowance(user, address(this)) < amount) revert Errors.InsufficientAllowance();
-        if(delegationBoost.delegable_balance(user) < amount) revert Errors.CannotDelegate();
+        IBoostV2 _delegationBoost = delegationBoost;
+        _delegationBoost.checkpoint_user(user);
+        if(_delegationBoost.allowance(user, address(this)) < amount) revert Errors.InsufficientAllowance();
+        if(_delegationBoost.delegable_balance(user) < amount) revert Errors.CannotDelegate();
 
         // Check that this will not go over the Pledge target of votes
-        if(delegationBoost.adjusted_balance_of(pledgeParams.receiver) + amount > pledgeParams.targetVotes) revert Errors.TargetVotesOverflow();
+        if(_delegationBoost.adjusted_balance_of(pledgeParams.receiver) + amount > pledgeParams.targetVotes) revert Errors.TargetVotesOverflow();
 
         // Creates the DelegationBoost
-        delegationBoost.boost(
+        _delegationBoost.boost(
             pledgeParams.receiver,
             amount,
             endTimestamp,
             user
         );
 
-        // Re-calculate the new Boost bias & slope (using Boostv2 logic)
+        // Re-calculate the new Boost bias & slope (using BoostV2 logic)
         uint256 slope = amount / boostDuration;
         uint256 bias = slope * boostDuration;
 
@@ -277,7 +276,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // Send the rewards to the user
         IERC20(pledgeParams.rewardToken).safeTransfer(user, rewardAmount);
 
-        emit Pledged(pledgeId, user, amount, endTimestamp);
+        emit Pledged(pledgeId, user, bias, endTimestamp);
     }
 
 
@@ -296,11 +295,11 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Creates a new Pledge
     * @param receiver Address to receive the boost delegation
     * @param rewardToken Address of the token distributed as reward
-    * @param targetVotes Maximum taget of votes to have (own balacne + delegation) for the receiver
+    * @param targetVotes Maximum target of votes to have (own balance + delegation) for the receiver
     * @param rewardPerVote Amount of reward given for each vote delegation (per second)
     * @param endTimestamp End of the Pledge
-    * @param maxTotalRewardAmount Maximum total reward amount allowed ot be pulled by this contract
-    * @param maxFeeAmount Maximum feeamount allowed ot be pulled by this contract
+    * @param maxTotalRewardAmount Maximum total reward amount allowed to be pulled by this contract
+    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     * @return uint256: Newly created Pledge ID
     */
     function createPledge(
@@ -311,15 +310,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 endTimestamp,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
-    ) external whenNotPaused nonReentrant returns(uint256){
+    ) external nonReentrant whenNotPaused returns(uint256){
         address creator = msg.sender;
 
         if(receiver == address(0) || rewardToken == address(0)) revert Errors.ZeroAddress();
-        if(minAmountRewardToken[rewardToken] == 0) revert Errors.TokenNotWhitelisted();
-        if(rewardPerVote < minAmountRewardToken[rewardToken]) revert Errors.RewardPerVoteTooLow();
+        uint256 _minAmountRewardToken = minAmountRewardToken[rewardToken];
+        if(_minAmountRewardToken == 0) revert Errors.TokenNotWhitelisted();
+        if(rewardPerVote < _minAmountRewardToken) revert Errors.RewardPerVoteTooLow();
 
         if(endTimestamp == 0) revert Errors.NullEndTimestamp();
-        if(endTimestamp != _getRoundedTimestamp(endTimestamp)) revert Errors.InvalidEndTimestamp();
+        if(endTimestamp != _getRoundedTimestamp(endTimestamp) || endTimestamp < block.timestamp) revert Errors.InvalidEndTimestamp();
 
         CreatePledgeVars memory vars;
         vars.duration = endTimestamp - block.timestamp;
@@ -332,7 +332,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(targetVotes < minVoteDiff) revert Errors.TargetVoteUnderMin();
 
         vars.totalRewardAmount = (rewardPerVote * vars.votesDifference * vars.duration) / UNIT;
-        vars.feeAmount = (vars.totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
+        vars.feeAmount = (vars.totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(vars.totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(vars.feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
@@ -341,10 +341,10 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // And transfer the fees from the Pledge creator to the Chest contract
         IERC20(rewardToken).safeTransferFrom(creator, chestAddress, vars.feeAmount);
 
-        vars.newPledgeID = pledgesIndex();
+        vars.newPledgeID = pledges.length;
 
-        // Add the total reards as available for the Pledge & write Pledge parameters in storage
-        pledgeAvailableRewardAmounts[vars.newPledgeID] += vars.totalRewardAmount;
+        // Add the total rewards as available for the Pledge & write Pledge parameters in storage
+        pledgeAvailableRewardAmounts[vars.newPledgeID] = vars.totalRewardAmount;
 
         pledges.push(Pledge(
             targetVotes,
@@ -369,40 +369,41 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Extends the Pledge duration & add rewards for that new duration
     * @param pledgeId ID of the Pledge
     * @param newEndTimestamp New end of the Pledge
-    * @param maxTotalRewardAmount Maximum added total reward amount allowed ot be pulled by this contract
-    * @param maxFeeAmount Maximum fee amount allowed ot be pulled by this contract
+    * @param maxTotalRewardAmount Maximum added total reward amount allowed to be pulled by this contract
+    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     */
     function extendPledge(
         uint256 pledgeId,
         uint256 newEndTimestamp,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
-    ) external whenNotPaused nonReentrant {
-        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
+    ) external nonReentrant whenNotPaused {
+        if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
 
         Pledge storage pledgeParams = pledges[pledgeId];
+        uint256 oldEndTimestamp = pledgeParams.endTimestamp;
         if(pledgeParams.closed) revert Errors.PledgeClosed();
-        if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
+        if(oldEndTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
         if(minAmountRewardToken[pledgeParams.rewardToken] == 0) revert Errors.TokenNotWhitelisted();
 
         if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
-        uint256 oldEndTimestamp = pledgeParams.endTimestamp;
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
 
         uint256 addedDuration = newEndTimestamp - oldEndTimestamp;
         if(addedDuration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
         uint256 totalRewardAmount = (pledgeParams.rewardPerVote * pledgeParams.votesDifference * addedDuration) / UNIT;
-        uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
+        uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
 
         // Pull all the rewards in this contract
-        IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
+        address _rewardToken = pledgeParams.rewardToken;
+        IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
         // And transfer the fees from the Pledge creator to the Chest contract
-        IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
+        IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
 
         // Update the Pledge parameters in storage
         pledgeParams.endTimestamp = safe64(newEndTimestamp);
@@ -417,16 +418,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @dev Increases the Pledge reward per vote delegated & add rewards for that new duration
     * @param pledgeId ID of the Pledge
     * @param newRewardPerVote New amount of reward given for each vote delegation (per second)
-    * @param maxTotalRewardAmount Maximum added total reward amount allowed ot be pulled by this contract
-    * @param maxFeeAmount Maximum fee amount allowed ot be pulled by this contract
+    * @param maxTotalRewardAmount Maximum added total reward amount allowed to be pulled by this contract
+    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     */
     function increasePledgeRewardPerVote(
         uint256 pledgeId,
         uint256 newRewardPerVote,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
-    ) external whenNotPaused nonReentrant {
-        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
+    ) external nonReentrant whenNotPaused {
+        if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
 
@@ -440,14 +441,15 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 remainingDuration = pledgeParams.endTimestamp - block.timestamp;
         uint256 rewardPerVoteDiff = newRewardPerVote - oldRewardPerVote;
         uint256 totalRewardAmount = (rewardPerVoteDiff * pledgeParams.votesDifference * remainingDuration) / UNIT;
-        uint256 feeAmount = (totalRewardAmount * protocalFeeRatio) / MAX_PCT ;
+        uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
-        IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
+        address _rewardToken = pledgeParams.rewardToken;
+        IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
         // And transfer the fees from the Pledge creator to the Chest contract
-        IERC20(pledgeParams.rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
+        IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
 
         // Update the Pledge parameters in storage
         pledgeParams.rewardPerVote = newRewardPerVote;
@@ -458,16 +460,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     }
 
     /**
-    * @notice Closes a Pledge and retrieves all non distributed rewards from a Pledge
-    * @dev Closes a Pledge and retrieves all non distributed rewards from a Pledge & send them to the given receiver
-    * @param pledgeId ID fo the Pledge to close
+    * @notice Closes a Pledge and retrieves all non-distributed rewards from a Pledge
+    * @dev Closes a Pledge and retrieves all non-distributed rewards from a Pledge & send them to the given receiver
+    * @param pledgeId ID of the Pledge to close
     * @param receiver Address to receive the remaining rewards
     */
     function closePledge(uint256 pledgeId, address receiver) external nonReentrant {
-        if(pledgeId >= pledgesIndex()) revert Errors.InvalidPledgeID();
+        if(receiver == address(0) || receiver == address(this)) revert Errors.InvalidValue();
+        if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
         if(msg.sender != creator) revert Errors.NotPledgeCreator();
-        if(receiver == address(0) || receiver == address(this)) revert Errors.InvalidValue();
 
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeAlreadyClosed();
@@ -478,8 +480,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // Get the current remaining amount of rewards not distributed for the Pledge
         uint256 remainingAmount = pledgeAvailableRewardAmounts[pledgeId];
 
-        if(remainingAmount > 0) {
-            // Transfer the non used rewards and reset storage
+        if(remainingAmount != 0) {
+            // Transfer the non-used rewards and reset storage
             pledgeAvailableRewardAmounts[pledgeId] = 0;
 
             IERC20(pledgeParams.rewardToken).safeTransfer(receiver, remainingAmount);
@@ -497,12 +499,12 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /**
     * @dev Adds a given reward token to the whitelist
     * @param token Address of the token
-    * @param minRewardPerSecond Minmum amount of reward per vote per second for the token
+    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
     */
     function _addRewardToken(address token, uint256 minRewardPerSecond) internal {
-        if(minAmountRewardToken[token] != 0) revert Errors.AlreadyAllowedToken();
         if(token == address(0)) revert Errors.ZeroAddress();
         if(minRewardPerSecond == 0) revert Errors.NullValue();
+        if(minAmountRewardToken[token] != 0) revert Errors.AlreadyAllowedToken();
         
         minAmountRewardToken[token] = minRewardPerSecond;
 
@@ -513,15 +515,15 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @notice Adds a given reward token to the whitelist
     * @dev Adds a given reward token to the whitelist
     * @param tokens List of token addresses to add
-    * @param minRewardsPerSecond Minmum amount of reward per vote per second for each token in the list
+    * @param minRewardsPerSecond Minimum amount of reward per vote per second for each token in the list
     */
     function addMultipleRewardToken(address[] calldata tokens, uint256[] calldata minRewardsPerSecond) external onlyOwner {
         uint256 length = tokens.length;
 
         if(length == 0) revert Errors.EmptyArray();
-        if(length != minRewardsPerSecond.length) revert Errors.InequalArraySizes();
+        if(length != minRewardsPerSecond.length) revert Errors.UnequalArraySizes();
 
-        for(uint256 i = 0; i < length;){
+        for(uint256 i; i < length;){
             _addRewardToken(tokens[i], minRewardsPerSecond[i]);
 
             unchecked{ ++i; }
@@ -532,7 +534,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @notice Adds a given reward token to the whitelist
     * @dev Adds a given reward token to the whitelist
     * @param token Address of the token
-    * @param minRewardPerSecond Minmum amount of reward per vote per second for the token
+    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
     */
     function addRewardToken(address token, uint256 minRewardPerSecond) external onlyOwner {
         _addRewardToken(token, minRewardPerSecond);
@@ -542,7 +544,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @notice Updates a reward token
     * @dev Updates a reward token
     * @param token Address of the token
-    * @param minRewardPerSecond Minmum amount of reward per vote per second for the token
+    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
     */
     function updateRewardToken(address token, uint256 minRewardPerSecond) external onlyOwner {
         if(token == address(0)) revert Errors.ZeroAddress();
@@ -587,7 +589,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param newMinVoteDiff New minimum difference of votes
     */
     function updateMinVoteDiff(uint256 newMinVoteDiff) external onlyOwner {
-        if(newMinVoteDiff == 0) revert Errors.InvalidValue();
+        // We want that value to be at minimum 1e18, to avoid any rounding issues
+        if(newMinVoteDiff < UNIT) revert Errors.InvalidValue();
         uint256 oldMinTarget = minVoteDiff;
         minVoteDiff = newMinVoteDiff;
 
@@ -595,16 +598,16 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     }
 
     /**
-    * @notice Updates the Platfrom fees BPS ratio
-    * @dev Updates the Platfrom fees BPS ratio
+    * @notice Updates the platform fees BPS ratio
+    * @dev Updates the platform fees BPS ratio
     * @param newFee New fee ratio
     */
     function updatePlatformFee(uint256 newFee) external onlyOwner {
         if(newFee > 500 || newFee == 0) revert Errors.InvalidValue();
-        uint256 oldfee = protocalFeeRatio;
-        protocalFeeRatio = newFee;
+        uint256 oldFee = protocolFeeRatio;
+        protocolFeeRatio = newFee;
 
-        emit PlatformFeeUpdated(oldfee, newFee);
+        emit PlatformFeeUpdated(oldFee, newFee);
     }
 
     /**
@@ -624,10 +627,10 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /**
     * @notice Recovers ERC2O tokens sent by mistake to the contract
     * @dev Recovers ERC2O tokens sent by mistake to the contract
-    * @param token Address tof the EC2O token
+    * @param token Address of the ERC2O token
     * @return bool: success
     */
-    function recoverERC20(address token) external onlyOwner returns(bool) {
+    function recoverERC20(address token) external nonReentrant onlyOwner returns(bool) {
         if(minAmountRewardToken[token] != 0) revert Errors.CannotRecoverToken();
 
         uint256 amount = IERC20(token).balanceOf(address(this));
