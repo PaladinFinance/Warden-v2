@@ -73,7 +73,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
 
     /** @notice ratio of fees to pay the protocol (in BPS) */
-    uint256 public protocolFeeRatio = 250; //bps
+    uint256 public protocolFeeRatio = 100;
     /** @notice Address to receive protocol fees */
     address public chestAddress;
 
