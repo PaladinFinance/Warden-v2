@@ -338,6 +338,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         vars.totalRewardAmount = (rewardPerVote * vars.votesDifference * vars.duration) / UNIT;
         vars.feeAmount = (vars.totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
+        if(vars.totalRewardAmount == 0 || vars.feeAmount == 0) revert Errors.NullAmount();
         if(vars.totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(vars.feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
@@ -403,6 +404,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(addedDuration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
         uint256 totalRewardAmount = (pledgeParams.rewardPerVote * pledgeParams.votesDifference * addedDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
+        if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
@@ -452,6 +454,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 rewardPerVoteDiff = newRewardPerVote - oldRewardPerVote;
         uint256 totalRewardAmount = (rewardPerVoteDiff * pledgeParams.votesDifference * remainingDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
+        if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
         if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 

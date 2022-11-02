@@ -13,6 +13,7 @@ library Errors {
     error InvalidValue();
     error UnequalArraySizes();
     error InvalidAddress();
+    error NullAmount();
 
     // Update Errors
     error FailRewardUpdate();
