@@ -100,6 +100,7 @@ library Errors {
     error TargetVotesOverflow();
     error RewardsBalanceTooLow();
     error InsufficientAllowance();
+    error EmptyBoost();
 
     // Math Errors
     error NumberExceed64Bits();

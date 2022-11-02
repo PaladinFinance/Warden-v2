@@ -2528,6 +2528,21 @@ describe('Warden Pledge contract tests', () => {
 
         });
 
+        it(' should fail if amount so small if wil lcreate an empty Boost', async () => {
+
+            const extremely_small_amount = BigNumber.from('1000000')
+
+            await delegationBoost.connect(delegator1).approve(wardenPledge.address, extremely_small_amount)
+
+            const current_ts = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
+            const boost_end_timestamp = getRoundedTimestamp(current_ts.add(WEEK.mul(boost_week_duration1)))
+
+            await expect(
+                wardenPledge.connect(delegator1).pledge(pledge_id, extremely_small_amount, boost_end_timestamp)
+            ).to.be.revertedWith('EmptyBoost')
+
+        });
+
         it(' should fail if given an invalid end timestamp', async () => {
 
             await delegationBoost.connect(delegator1).approve(wardenPledge.address, deleg_amount1)

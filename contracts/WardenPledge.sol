@@ -263,6 +263,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 slope = amount / boostDuration;
         uint256 bias = slope * boostDuration;
 
+        if(bias == 0) revert Errors.EmptyBoost();
+
         // Rewards are set in the Pledge as reward/veToken/sec
         // To find the total amount of veToken delegated through the whole Boost duration
         // based on the Boost bias & the Boost duration, to take in account that the delegated amount decreases
