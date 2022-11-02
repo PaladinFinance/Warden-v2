@@ -22,4 +22,6 @@ interface IVotingEscrow {
 
     function locked__end(address _addr) external view returns (uint256);
 
+    function get_last_user_slope(address _addr) external view returns (uint256);
+
 }

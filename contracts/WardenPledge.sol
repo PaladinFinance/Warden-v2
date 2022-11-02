@@ -33,9 +33,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     struct Pledge{
         // Target amount of veCRV (balance scaled by Boost v2, fetched as adjusted_balance)
         uint256 targetVotes;
-        // Difference of votes between the target and the receiver balance at the start of the Pledge
-        // (used for later extension/increase of some parameters of the Pledge)
-        uint256 votesDifference;
         // Price per vote per second, set by the owner
         uint256 rewardPerVote;
         // Address to receive the Boosts
@@ -288,8 +285,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     // Pledge Creators Methods
 
     struct CreatePledgeVars {
-        uint256 duration;
-        uint256 votesDifference;
+        uint256 totalVotes;
         uint256 totalRewardAmount;
         uint256 feeAmount;
         uint256 newPledgeID;
@@ -327,16 +323,10 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(endTimestamp != _getRoundedTimestamp(endTimestamp) || endTimestamp < block.timestamp) revert Errors.InvalidEndTimestamp();
 
         CreatePledgeVars memory vars;
-        vars.duration = endTimestamp - block.timestamp;
-        if(vars.duration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
+        
+        vars.totalVotes = _getTotalVotesForDuration(receiver, targetVotes, endTimestamp);
 
-        // Get the missing votes for the given receiver to reach the target votes
-        // We ignore any delegated boost here because they might expire during the Pledge duration
-        // (we can have a future version of this contract using adjusted_balance)
-        vars.votesDifference = targetVotes - votingEscrow.balanceOf(receiver);
-        if(targetVotes < minVoteDiff) revert Errors.TargetVoteUnderMin();
-
-        vars.totalRewardAmount = (rewardPerVote * vars.votesDifference * vars.duration) / UNIT;
+        vars.totalRewardAmount = (rewardPerVote * vars.totalVotes) / UNIT;
         vars.feeAmount = (vars.totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(vars.totalRewardAmount == 0 || vars.feeAmount == 0) revert Errors.NullAmount();
         if(vars.totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -355,7 +345,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         pledges.push(Pledge(
             targetVotes,
-            vars.votesDifference,
             rewardPerVote,
             receiver,
             rewardToken,
@@ -400,9 +389,17 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
 
-        uint256 addedDuration = newEndTimestamp - oldEndTimestamp;
-        if(addedDuration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
-        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * pledgeParams.votesDifference * addedDuration) / UNIT;
+        if((newEndTimestamp - oldEndTimestamp) < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
+
+        // To find the Total Votes for the added duration, we fetch the Total Votes
+        // for the current endTimestamp (from now to oldEndTimestamp), and the Total Votes
+        // for the new endTimestamp (from now to newEndTimestamp).
+        // And the Total Votes for the added duration is simply the Total Votes for the new
+        // endTimestamp minus the Total Votes for the current endTimestamp.
+        // (the subsctraction removes the Total Votes for the common duration between the 2 endTimestamps)
+        uint256 oldEndTotalRemaingVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, oldEndTimestamp);
+        uint256 totalVotesAddedDuration = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, newEndTimestamp) - oldEndTotalRemaingVotes;
+        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * totalVotesAddedDuration) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -443,16 +440,19 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         Pledge storage pledgeParams = pledges[pledgeId];
         if(pledgeParams.closed) revert Errors.PledgeClosed();
-        if(pledgeParams.endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
+        uint256 _endTimestamp = pledgeParams.endTimestamp;
+        if(_endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
         address _rewardToken = pledgeParams.rewardToken;
         if(minAmountRewardToken[_rewardToken] == 0) revert Errors.TokenNotWhitelisted();
         if(pledgeParams.rewardPerVote < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
 
         uint256 oldRewardPerVote = pledgeParams.rewardPerVote;
         if(newRewardPerVote <= oldRewardPerVote) revert Errors.RewardsPerVotesTooLow();
-        uint256 remainingDuration = pledgeParams.endTimestamp - block.timestamp;
         uint256 rewardPerVoteDiff = newRewardPerVote - oldRewardPerVote;
-        uint256 totalRewardAmount = (rewardPerVoteDiff * pledgeParams.votesDifference * remainingDuration) / UNIT;
+
+        uint256 totalVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, _endTimestamp);
+        
+        uint256 totalRewardAmount = (rewardPerVoteDiff * totalVotes) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -506,6 +506,58 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         }
 
         emit ClosePledge(pledgeId);
+    }
+
+    /**
+    * @dev Get the missing votes for the given receiver to reach the target votes
+    * We ignore any delegated boost here because they might expire during the Pledge duration
+    * (we can have a future version of this contract using adjusted_balance)
+    * @param receiver Address to receive the boost delegation
+    * @param targetVotes Maximum target of votes to have (own balance + delegation) for the receiver
+    * @param endTimestamp End of the Pledge
+    */
+    function _getTotalVotesForDuration(
+        address receiver,
+        uint256 targetVotes,
+        uint256 endTimestamp
+    ) internal view returns(uint256) {
+        IVotingEscrow _votingEscrow = votingEscrow;
+        uint256 duration = endTimestamp - block.timestamp;
+        if(duration < MIN_PLEDGE_DURATION) revert Errors.DurationTooShort();
+
+        // Total votes needed to reach the TargetVotes for each second of the Pledge duration
+        uint256 neededTotalVotes = targetVotes * duration;
+        // Total votes the receiver already has (from the veCRV balance) for each second of the Pledge duration
+        uint256 totalReceiverVotes;
+        
+        // Current receiver bias (calculated by veCRV contract)
+        uint256 receiverBalance = _votingEscrow.balanceOf(receiver);
+
+        if((targetVotes - receiverBalance) < minVoteDiff) revert Errors.TargetVoteUnderMin();
+
+        if(receiverBalance != 0){
+            // If receiver has a veCRV lock
+            uint256 receiverLockEnd = _votingEscrow.locked__end(receiver);
+
+            if(receiverLockEnd < endTimestamp) {
+                // If the receiver veCRV lock ends after the Pledge endTimestamp
+                uint256 lockRemainingDuration = receiverLockEnd - block.timestamp;
+
+                // We calculate the total amount of vote the receiver will have for each second until the end of the lock
+                totalReceiverVotes = ((receiverBalance * lockRemainingDuration) + receiverBalance) / 2;
+            } else {
+                // If the receiver veCRV lock ends before the end of the Pledge
+                uint256 receiverSlope = _votingEscrow.get_last_user_slope(receiver);
+                uint256 receiverEndTsBias = receiverBalance - (duration * receiverSlope);
+
+                // We calculate the receiver bias at the end of the duration, and account
+                // for the veCRV balance decrease, and sum up to get the total amount of votes the receiver
+                // will have through the duration of the Pledge
+                totalReceiverVotes = ((duration * (receiverBalance + receiverEndTsBias + receiverSlope)) / 2);
+            }
+        }
+
+        return neededTotalVotes - totalReceiverVotes;
     }
 
 
