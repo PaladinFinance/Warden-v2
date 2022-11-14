@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, waffle } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { WardenPledge } from "../typechain/WardenPledge";
@@ -9,6 +9,8 @@ import { IVotingEscrow } from "../typechain/interfaces/IVotingEscrow";
 import { IVotingEscrow__factory } from "../typechain/factories/interfaces/IVotingEscrow__factory";
 import { IBoostV2 } from "../typechain/interfaces/IBoostV2";
 import { IBoostV2__factory } from "../typechain/factories/interfaces/IBoostV2__factory";
+import { IVotingEscrowStateOracle } from "../typechain/interfaces/IVotingEscrowStateOracle";
+import { IVotingEscrowStateOracle__factory } from "../typechain/factories/interfaces/IVotingEscrowStateOracle__factory";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -17,6 +19,10 @@ import {
     advanceTime,
     getERC20,
     resetFork,
+    getVeHolders,
+    getVeHolder,
+    setBlockhash,
+    setHolderSidechainBalance,
 } from "./utils/utils";
 
 import {
@@ -34,6 +40,15 @@ chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
 
+const chainId: number = network.config.chainId || 137;
+
+let network_name = "Ethereum"
+if (chainId === 137) network_name = "Polygon"
+if (chainId === 43114) network_name = "Avalanche"
+if (chainId === 250) network_name = "Fantom"
+if (chainId === 10) network_name = "Optimism"
+if (chainId === 42161) network_name = "Arbitrum"
+
 const WEEK = BigNumber.from(7 * 86400);
 const MAX_BPS = BigNumber.from(10000);
 const UNIT = ethers.utils.parseEther('1')
@@ -48,7 +63,7 @@ const min_reward_per_vote = [
     ethers.utils.parseEther('0.000000001')
 ]
 
-describe('Warden Pledge contract tests', () => {
+describe('Warden Pledge contract tests - ' + network_name + ' version', () => {
     let admin: SignerWithAddress
     let chest: SignerWithAddress
     let receiver: SignerWithAddress
@@ -72,18 +87,13 @@ describe('Warden Pledge contract tests', () => {
 
     let delegators: SignerWithAddress[]
 
-    const crv_amount = ethers.utils.parseEther('4000000');
-    const lock_amounts = [
-        ethers.utils.parseEther('500000'),
-        ethers.utils.parseEther('750000'),
-        ethers.utils.parseEther('275000')
-    ]
+    const crv_amount = ethers.utils.parseEther('40000');
 
     const getRoundedTimestamp = (timestamp: BigNumber) => {
         return timestamp.div(WEEK).mul(WEEK)
     }
 
-    const resetVeLock = async (user: SignerWithAddress, lock_amount: BigNumber) => {
+    /*const resetVeLock = async (user: SignerWithAddress, lock_amount: BigNumber) => {
         const locked_balance = (await veCRV.locked(user.address)).amount
         const lock_end = (await veCRV.locked(user.address)).end
         const unlock_time = getRoundedTimestamp(VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
@@ -95,29 +105,31 @@ describe('Warden Pledge contract tests', () => {
         } else if(unlock_time.gt(lock_end)) {
             await veCRV.connect(user).increase_unlock_time(unlock_time);
         }
-    }
+    }*/
 
     before(async () => {
         [admin, chest, receiver, externalUser, creator, other_creator, delegator1, delegator2, delegator3] = await ethers.getSigners();
+
+        [delegator1, delegator2, delegator3] = await getVeHolders(admin, 3)
 
         delegators = [delegator1, delegator2, delegator3]
 
         wardenPledgeFactory = await ethers.getContractFactory("WardenPledge");
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        CRV = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
 
-        delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS[chainId], provider);
 
-        rewardToken1 = IERC20__factory.connect(TOKENS[0], provider);
-        rewardToken2 = IERC20__factory.connect(TOKENS[1], provider);
+        rewardToken1 = IERC20__factory.connect(TOKENS[chainId][0], provider);
+        rewardToken2 = IERC20__factory.connect(TOKENS[chainId][1], provider);
 
     })
 
 
     beforeEach(async () => {
-        await resetFork();
+        await resetFork(chainId);
         
         wardenPledge = (await wardenPledgeFactory.connect(admin).deploy(
             veCRV.address,
@@ -127,16 +139,18 @@ describe('Warden Pledge contract tests', () => {
         )) as WardenPledge;
         await wardenPledge.deployed();
 
-        await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
-        await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
+        await getERC20(admin, HOLDERS[chainId][0], rewardToken1, admin.address, AMOUNTS[chainId][0]);
+        await getERC20(admin, HOLDERS[chainId][1], rewardToken2, admin.address, AMOUNTS[chainId][1]);
 
-        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER[chainId], CRV, admin.address, crv_amount);
+
+        let stateOracle: IVotingEscrowStateOracle
+        stateOracle = IVotingEscrowStateOracle__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
+
+        await setBlockhash(admin, stateOracle)
 
         for(let i = 0; i < delegators.length; i++){
-            let delegator = delegators[i]
-            await CRV.connect(admin).transfer(delegator.address, lock_amounts[i]);
-            await CRV.connect(delegator).approve(veCRV.address, lock_amounts[i]);
-            await resetVeLock(delegators[i], lock_amounts[i])
+            await setHolderSidechainBalance(admin, stateOracle, delegators[i])
         }
 
     });

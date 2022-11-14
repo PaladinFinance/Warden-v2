@@ -1,6 +1,6 @@
 # @version 0.3.3
 """
-@title Boost Delegation V2
+@title Boost Delegation V2 - Sidechain Edition
 @author CurveFi
 """
 
@@ -22,20 +22,16 @@ event Boost:
     _slope: uint256
     _start: uint256
 
-event Migrate:
-    _token_id: indexed(uint256)
-
-
-interface BoostV1:
-    def ownerOf(_token_id: uint256) -> address: view
-    def token_boost(_token_id: uint256) -> int256: view
-    def token_expiry(_token_id: uint256) -> uint256: view
 
 interface VotingEscrow:
     def balanceOf(_user: address) -> uint256: view
     def totalSupply() -> uint256: view
-    def locked__end(_user: address) -> uint256: view
+    def locked(_user: address) -> LockedBalance: view
 
+
+struct LockedBalance:
+    amount: int128
+    end: uint256
 
 struct Point:
     bias: uint256
@@ -53,7 +49,6 @@ PERMIT_TYPEHASH: constant(bytes32) = keccak256("Permit(address owner,address spe
 WEEK: constant(uint256) = 86400 * 7
 
 
-BOOST_V1: immutable(address)
 DOMAIN_SEPARATOR: immutable(bytes32)
 VE: immutable(address)
 
@@ -67,12 +62,9 @@ delegated_slope_changes: public(HashMap[address, HashMap[uint256, uint256]])
 received: public(HashMap[address, Point])
 received_slope_changes: public(HashMap[address, HashMap[uint256, uint256]])
 
-migrated: public(HashMap[uint256, bool])
-
 
 @external
-def __init__(_boost_v1: address, _ve: address):
-    BOOST_V1 = _boost_v1
+def __init__(_ve: address):
     DOMAIN_SEPARATOR = keccak256(_abi_encode(EIP712_TYPEHASH, keccak256(NAME), keccak256(VERSION), chain.id, self, block.prevhash))
     VE = _ve
 
@@ -182,7 +174,7 @@ def _boost(_from: address, _to: address, _amount: uint256, _endtime: uint256):
     assert _amount != 0
     assert _endtime > block.timestamp
     assert _endtime % WEEK == 0
-    assert _endtime <= VotingEscrow(VE).locked__end(_from)
+    assert _endtime <= VotingEscrow(VE).locked(_from).end
 
     # checkpoint delegated point
     point: Point = self._checkpoint_write(_from, True)
@@ -227,21 +219,6 @@ def boost(_to: address, _amount: uint256, _endtime: uint256, _from: address = ms
             log Approval(_from, msg.sender, allowance - _amount)
 
     self._boost(_from, _to, _amount, _endtime)
-
-
-@external
-def migrate(_token_id: uint256):
-    assert not self.migrated[_token_id]
-
-    self._boost(
-        convert(shift(_token_id, -96), address),  # from
-        BoostV1(BOOST_V1).ownerOf(_token_id),  # to
-        convert(BoostV1(BOOST_V1).token_boost(_token_id), uint256),  # amount
-        BoostV1(BOOST_V1).token_expiry(_token_id),  # expiry
-    )
-
-    self.migrated[_token_id] = True
-    log Migrate(_token_id)
 
 
 @external
@@ -307,12 +284,6 @@ def balanceOf(_user: address) -> uint256:
 
 @view
 @external
-def adjusted_balance_of(_user: address) -> uint256:
-    return self._balance_of(_user)
-
-
-@view
-@external
 def totalSupply() -> uint256:
     return VotingEscrow(VE).totalSupply()
 
@@ -354,12 +325,6 @@ def symbol() -> String[8]:
 @external
 def decimals() -> uint8:
     return 18
-
-
-@pure
-@external
-def BOOST_V1() -> address:
-    return BOOST_V1
 
 
 @pure

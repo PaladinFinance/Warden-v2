@@ -8,7 +8,13 @@ import "solidity-coverage";
 import "hardhat-gas-reporter";
 import "@nomiclabs/hardhat-vyper";
 
+import { BLOCK_NUMBER } from "./test/utils/constant";
+import { TEST_URI } from "./test/utils/network";
+
 require("dotenv").config();
+
+// Defaults to CHAINID=1 so things will run with mainnet fork if not specified
+const CHAINID = process.env.CHAINID ? Number(process.env.CHAINID) : 137;
 
 
 const TEST_MNEMONIC = "test test test test test test test test test test test junk";
@@ -41,10 +47,11 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      chainId: CHAINID,
       forking: {
-        url: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
-        blockNumber: 15169400
-      }
+        url: TEST_URI[CHAINID],
+        blockNumber: BLOCK_NUMBER[CHAINID]
+      },
     },
     mainnet: {
       url: process.env.MAINNET_URI || '',

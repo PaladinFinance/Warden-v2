@@ -242,7 +242,7 @@ contract WardenPledge is Ownable, Pausable, ReentrancyGuard {
         if(delegationBoost.delegable_balance(user) < amount) revert Errors.CannotDelegate();
 
         // Check that this will not go over the Pledge target of votes
-        if(delegationBoost.adjusted_balance_of(pledgeParams.receiver) + amount > pledgeParams.targetVotes) revert Errors.TargetVotesOverflow();
+        if(delegationBoost.balanceOf(pledgeParams.receiver) + amount > pledgeParams.targetVotes) revert Errors.TargetVotesOverflow();
 
         // Creates the DelegationBoost
         delegationBoost.boost(

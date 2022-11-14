@@ -357,7 +357,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(maxDuration == 0) revert Errors.NullMaxDuration();
         if(expiryTime != 0 && expiryTime < (block.timestamp + WEEK)) revert Errors.IncorrectExpiry();
 
-        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked__end(user));
+        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked(user).end);
 
         // Create the BoostOffer for the new user, and add it to the storage
         userIndex[user] = offers.length;
@@ -403,7 +403,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(maxDuration == 0) revert Errors.NullMaxDuration();
         if(expiryTime != 0 && expiryTime < (block.timestamp + WEEK)) revert Errors.IncorrectExpiry();
 
-        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked__end(user));
+        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked(user).end);
 
         // Update the parameters
         offer.pricePerVote = pricePerVote;
@@ -747,7 +747,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         expiryTime = (expiryTime < block.timestamp + boostDuration) ?
             ((block.timestamp + boostDuration + WEEK) / WEEK) * WEEK :
             expiryTime;
-        if(expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
+        if(expiryTime > votingEscrow.locked(delegator).end) revert Errors.LockEndTooShort();
         // Real Boost duration (for fees)
         boostDuration = expiryTime - block.timestamp;
 
@@ -802,7 +802,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
             ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
             vars.expiryTime;
-        if(vars.expiryTime > votingEscrow.locked__end(delegator)) revert Errors.LockEndTooShort();
+        if(vars.expiryTime > votingEscrow.locked(delegator).end) revert Errors.LockEndTooShort();
         // Real Boost duration (for fees)
         vars.boostDuration = vars.expiryTime - block.timestamp;
 

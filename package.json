@@ -12,7 +12,12 @@
     "deploy": "npx hardhat run --network mainnet",
     "deploy_fork": "npx hardhat run --network fork",
     "setup-foundry": "foundryup && forge install",
-    "test-fuzz": "forge test -vv"
+    "test-fuzz": "forge test -vv",
+    "test-polygon": "CHAINID=137 npx hardhat test",
+    "test-avax": "CHAINID=43114 npx hardhat test",
+    "test-fantom": "CHAINID=250 npx hardhat test",
+    "test-arbitrum": "CHAINID=42161 npx hardhat test",
+    "test-optimism": "CHAINID=10 npx hardhat test"
   },
   "author": "",
   "license": "MIT",

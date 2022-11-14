@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity 0.8.10;
 
 
-/** @title Custom Interface for Curve VotingEscrow contract  */
+/** @title Custom Interface for Curve VotingEscrow contract - sidechain version */
 interface IVotingEscrow {
 
     struct LockedBalance {
@@ -20,6 +20,6 @@ interface IVotingEscrow {
 
     function increase_unlock_time(uint256 _unlock_time) external;
 
-    function locked__end(address _addr) external view returns (uint256);
+    function withdraw() external;
 
 }

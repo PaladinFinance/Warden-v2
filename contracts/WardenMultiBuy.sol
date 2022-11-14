@@ -507,7 +507,7 @@ contract WardenMultiBuy is Ownable {
         if (block.timestamp > offerExpiryTime) return 0;
 
         // veCRV locks ends before wanted duration
-        if (expiryTime >= votingEscrow.locked__end(delegator)) return 0;
+        if (expiryTime >= votingEscrow.locked(delegator).end) return 0;
 
         uint256 userBalance = votingEscrow.balanceOf(delegator);
         uint256 delegableBalance = delegationBoost.delegable_balance(delegator);
