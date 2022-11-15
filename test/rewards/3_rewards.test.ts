@@ -168,24 +168,62 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
 
         await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('25000000'));
 
-        //split between all delegators
-        await BaseToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
-        await BaseToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
-        await BaseToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
-        await BaseToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
-        await BaseToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
-        await BaseToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
-        await BaseToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
-        await BaseToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+        if(VE_TOKEN === "VEBAL") {
+            const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+            const SLOT = 0
 
-        await BaseToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
-        await BaseToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
-        await BaseToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
-        await BaseToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
-        await BaseToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
-        await BaseToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
-        await BaseToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
-        await BaseToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
+
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [admin.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(baseToken_amount.toString()).toString(),
+            ]);
+
+            //split between all delegators
+            await LBP_Token.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('2000'));
+            await LBP_Token.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('3500'));
+            await LBP_Token.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('2750'));
+            await LBP_Token.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('2500'));
+            await LBP_Token.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('1000'));
+            await LBP_Token.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('1500'));
+            await LBP_Token.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('5000'));
+            await LBP_Token.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('1750'));
+
+            await LBP_Token.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('2000'));
+            await LBP_Token.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('3500'));
+            await LBP_Token.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('2750'));
+            await LBP_Token.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('2500'));
+            await LBP_Token.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('1000'));
+            await LBP_Token.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('1500'));
+            await LBP_Token.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('5000'));
+            await LBP_Token.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('1750'));
+
+            } else {
+                //split between all delegators
+            await BaseToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('2000'));
+            await BaseToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('3500'));
+            await BaseToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('2750'));
+            await BaseToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('2500'));
+            await BaseToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('1000'));
+            await BaseToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('1500'));
+            await BaseToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('5000'));
+            await BaseToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('1750'));
+
+            await BaseToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('2000'));
+            await BaseToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('3500'));
+            await BaseToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('2750'));
+            await BaseToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('2500'));
+            await BaseToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('1000'));
+            await BaseToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('1500'));
+            await BaseToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('5000'));
+            await BaseToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('1750'));
+        }
 
         const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)

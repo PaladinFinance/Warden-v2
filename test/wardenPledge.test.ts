@@ -151,15 +151,44 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
         await getERC20(admin, HOLDERS[0], rewardToken1, admin.address, AMOUNTS[0]);
         await getERC20(admin, HOLDERS[1], rewardToken2, admin.address, AMOUNTS[1]);
 
-        await getERC20(admin, BIG_HOLDER, BaseToken, admin.address, baseToken_amount);
+        if(VE_TOKEN === "VEBAL") {
+            const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+            const SLOT = 0
 
-        for(let i = 0; i < delegators.length; i++){
-            let delegator = delegators[i]
-            await BaseToken.connect(admin).transfer(delegator.address, lock_amounts[i]);
-            await BaseToken.connect(delegator).approve(veToken.address, lock_amounts[i]);
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
 
-            await resetVeLock(delegators[i], lock_amounts[i])
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [admin.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(baseToken_amount.toString()).toString(),
+            ]);
+
+            for(let i = 0; i < delegators.length; i++){
+                let delegator = delegators[i]
+                await LBP_Token.connect(admin).transfer(delegator.address, lock_amounts[i]);
+                await LBP_Token.connect(delegator).approve(veToken.address, lock_amounts[i]);
+
+                await resetVeLock(delegators[i], lock_amounts[i])
+            }
+            await getERC20(admin, BIG_HOLDER, BaseToken, admin.address, baseToken_amount);
+
+        } else{
+            await getERC20(admin, BIG_HOLDER, BaseToken, admin.address, baseToken_amount);
+
+            for(let i = 0; i < delegators.length; i++){
+                let delegator = delegators[i]
+                await BaseToken.connect(admin).transfer(delegator.address, lock_amounts[i]);
+                await BaseToken.connect(delegator).approve(veToken.address, lock_amounts[i]);
+
+                await resetVeLock(delegators[i], lock_amounts[i])
+            }
         }
+
     });
 
     it(' should be deployed & have correct parameters', async () => {
@@ -665,11 +694,22 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
 
             const lock_amount = ethers.utils.parseEther('12500')
 
-            await BaseToken.connect(admin).transfer(receiver.address, lock_amount);
-            await BaseToken.connect(receiver).approve(veToken.address, lock_amount);
+            if(VE_TOKEN === "VEBAL") {
+                const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+                const LBP_Token = IERC20__factory.connect(LBP_address, provider);
 
-            const unlock_time = getRoundedTimestamp(VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
-            await veToken.connect(receiver).create_lock(lock_amount, unlock_time);
+                await LBP_Token.connect(admin).transfer(receiver.address, lock_amount);
+                await LBP_Token.connect(receiver).approve(veToken.address, lock_amount);
+
+                const unlock_time = getRoundedTimestamp(VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
+                await veToken.connect(receiver).create_lock(lock_amount, unlock_time);
+            } else {
+                await BaseToken.connect(admin).transfer(receiver.address, lock_amount);
+                await BaseToken.connect(receiver).approve(veToken.address, lock_amount);
+
+                const unlock_time = getRoundedTimestamp(VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp))
+                await veToken.connect(receiver).create_lock(lock_amount, unlock_time);
+            }            
             
             await rewardToken1.connect(creator).approve(wardenPledge.address, max_total_reward_amount.add(max_fee_amount))
 

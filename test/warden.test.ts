@@ -61,39 +61,72 @@ describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
     const base_advised_price = BigNumber.from(1.25 * 1e10)
 
     before(async () => {
-        await resetFork(BLOCK_NUMBER);
 
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const baseToken_amount = ethers.utils.parseEther('3000');
-        const lock_amount = ethers.utils.parseEther('1000');
-
         BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
         veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
-
-        await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
-
-        await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
-        const locked_balance = (await veToken.locked(delegator.address)).amount
-        const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
-        if(locked_balance.eq(0)){
-            await veToken.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if(locked_balance.lt(lock_amount)) {
-            await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        }
-
-        await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
 
     })
 
 
     beforeEach(async () => {
+        await resetFork(BLOCK_NUMBER);
+
+        const baseToken_amount = ethers.utils.parseEther('3000');
+        const lock_amount = ethers.utils.parseEther('1000');
+
+        await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
+
+        if(VE_TOKEN === "VEBAL") {
+            const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+            const SLOT = 0
+
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
+
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [delegator.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(lock_amount.toString()).toString(),
+            ]);
+
+            await LBP_Token.connect(delegator).approve(veToken.address, lock_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if(locked_balance.eq(0)){
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if(locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount);
+
+        } else{
+            await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if(locked_balance.eq(0)){
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if(locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
+        }
 
         if(BOOST_DELEGATION_ADDRESS != ethers.constants.AddressZero){
             delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);

@@ -127,20 +127,53 @@ describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
 
         await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('2500000'));
 
-        await BaseToken.connect(delegator).approve(veToken.address, 0);
-        await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
-        const locked_balance = (await veToken.locked(delegator.address)).amount
-        const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
-        if (locked_balance.eq(0)) {
-            await veToken.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if (locked_balance.lt(lock_amount)) {
-            await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        }
+        if(VE_TOKEN === "VEBAL") {
+            const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+            const SLOT = 0
 
-        await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
+
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [delegator.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(lock_amount.toString()).toString(),
+            ]);
+
+            await LBP_Token.connect(delegator).approve(veToken.address, 0);
+            await LBP_Token.connect(delegator).approve(veToken.address, lock_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if(locked_balance.eq(0)){
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if(locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount);
+        } else{
+            await BaseToken.connect(delegator).approve(veToken.address, 0);
+            await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
+        }
 
         await delegationBoost.connect(delegator).approve(warden.address, ethers.constants.MaxUint256);
 
