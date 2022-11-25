@@ -186,43 +186,43 @@ describe('Warden rewards tests - part 3 - ' + VE_TOKEN + ' version', () => {
             ]);
 
             //split between all delegators
-            await LBP_Token.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('2000'));
-            await LBP_Token.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('3500'));
-            await LBP_Token.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('2750'));
-            await LBP_Token.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('2500'));
-            await LBP_Token.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('1000'));
-            await LBP_Token.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('1500'));
-            await LBP_Token.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('5000'));
-            await LBP_Token.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('1750'));
+            await LBP_Token.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await LBP_Token.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await LBP_Token.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await LBP_Token.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await LBP_Token.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await LBP_Token.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await LBP_Token.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await LBP_Token.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
 
-            await LBP_Token.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('2000'));
-            await LBP_Token.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('3500'));
-            await LBP_Token.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('2750'));
-            await LBP_Token.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('2500'));
-            await LBP_Token.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('1000'));
-            await LBP_Token.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('1500'));
-            await LBP_Token.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('5000'));
-            await LBP_Token.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('1750'));
+            await LBP_Token.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await LBP_Token.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await LBP_Token.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await LBP_Token.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await LBP_Token.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await LBP_Token.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await LBP_Token.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await LBP_Token.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
 
-            } else {
+        } else {
                 //split between all delegators
-            await BaseToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('2000'));
-            await BaseToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('3500'));
-            await BaseToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('2750'));
-            await BaseToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('2500'));
-            await BaseToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('1000'));
-            await BaseToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('1500'));
-            await BaseToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('5000'));
-            await BaseToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('1750'));
+            await BaseToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await BaseToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await BaseToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await BaseToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await BaseToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await BaseToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await BaseToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await BaseToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
 
-            await BaseToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('2000'));
-            await BaseToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('3500'));
-            await BaseToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('2750'));
-            await BaseToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('2500'));
-            await BaseToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('1000'));
-            await BaseToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('1500'));
-            await BaseToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('5000'));
-            await BaseToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('1750'));
+            await BaseToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await BaseToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await BaseToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await BaseToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await BaseToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await BaseToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await BaseToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await BaseToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
         }
 
         const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)

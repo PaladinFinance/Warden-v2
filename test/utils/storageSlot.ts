@@ -61,6 +61,4 @@ async function findBalancesSlot(tokenAddress: string) {
 
     const slot = await findBalancesSlot(token_address)
 
-    console.log("Slot :", slot)
-
 })();

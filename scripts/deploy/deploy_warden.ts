@@ -5,9 +5,14 @@ const ethers = hre.ethers;
 
 const network = hre.network.name;
 
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+
 const params_path = () => {
     if (network === 'fork') {
         return '../utils/fork_params'
+    }
+    else if(VE_TOKEN === "VESDT") {
+        return '../utils/sdt_params'
     }
     else {
         return '../utils/main_params'
