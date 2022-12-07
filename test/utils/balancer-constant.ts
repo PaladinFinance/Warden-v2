@@ -1,13 +1,13 @@
 import { ethers } from "hardhat";
 import { BigNumber } from "ethers";
 
-export const BLOCK_NUMBER = 15820830
+export const BLOCK_NUMBER = 16133946
 
 export const TOKEN_ADDRESS = "0xba100000625a3754423978a60c9317c58a424e3D"; //here : BAL
 
 export const VOTING_ESCROW_ADDRESS = "0xC128a9954e6c874eA3d62ce62B468bA073093F25"; //here : veBAL
 
-export const BOOST_DELEGATION_ADDRESS = "0x0000000000000000000000000000000000000000"; //here : veBoost for veBAL
+export const BOOST_DELEGATION_ADDRESS = "0x67F8DF125B796B05895a6dc8Ecf944b9556ecb0B"; //here : veBoost for veBAL
 
 export const OLD_BOOST_DELEGATON_ADDRESS = "0xB496FF44746A8693A060FafD984Da41B253f6790";
 
