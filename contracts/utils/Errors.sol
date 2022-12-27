@@ -11,7 +11,9 @@ library Errors {
     error ZeroAddress();
     error NullValue();
     error InvalidValue();
-    error InequalArraySizes();
+    error UnequalArraySizes();
+    error InvalidAddress();
+    error NullAmount();
 
     // Update Errors
     error FailRewardUpdate();
@@ -99,6 +101,7 @@ library Errors {
     error TargetVotesOverflow();
     error RewardsBalanceTooLow();
     error InsufficientAllowance();
+    error EmptyBoost();
 
     // Math Errors
     error NumberExceed64Bits();
