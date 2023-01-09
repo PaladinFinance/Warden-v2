@@ -11,6 +11,7 @@ library Errors {
     error ZeroAddress();
     error NullValue();
     error InvalidValue();
+    error InequalArraySizes();
 
     // Update Errors
     error FailRewardUpdate();
@@ -68,6 +69,9 @@ library Errors {
     error ReserveTooLow();
     error BaseDropTooLow();
     error MinDropTooHigh();
+    error AlreadyAllowedToken();
+    error NotAllowedToken();
+    error CannotRecoverToken();
 
     // MultiBuy Errors
     error NotEnoughFees();
@@ -75,5 +79,28 @@ library Errors {
     error CannotMatchOrder();
     error EmptyArray();
     error InvalidBoostOffer();
+
+    //PledgeErrors
+    error TokenNotWhitelisted();
+    error RewardPerVoteTooLow();
+    error TargetVoteUnderMin();
+    error IncorrectMaxTotalRewardAmount();
+    error IncorrectMaxFeeAmount();
+    error InvalidEndTimestamp();
+    error NullEndTimestamp();
+    error NotPledgeCreator();
+    error ExpiredPledge();
+    error PledgeNotExpired();
+    error PledgeClosed();
+    error PledgeAlreadyClosed();
+    error TargetVotesTooLoow();
+    error RewardsPerVotesTooLow();
+    error InvalidPledgeID();
+    error TargetVotesOverflow();
+    error RewardsBalanceTooLow();
+    error InsufficientAllowance();
+
+    // Math Errors
+    error NumberExceed64Bits();
 
 }

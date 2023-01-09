@@ -25,14 +25,14 @@ export async function setBlockTimestamp(
     await hre.network.provider.send("evm_mine")
 }
 
-export async function resetFork() {
+export async function resetFork(block_number = 15169400) {
     await hre.network.provider.request({
         method: "hardhat_reset",
         params: [
           {
             forking: {
                 jsonRpcUrl: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
-                blockNumber: 15169400
+                blockNumber: block_number
             },
           },
         ],
