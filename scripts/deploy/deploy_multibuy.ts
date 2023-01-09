@@ -17,6 +17,9 @@ const params_path = () => {
     else if(VE_TOKEN === "VEANGLE") {
         return '../utils/angle_params'
     }
+    else if(VE_TOKEN === "VEBAL") {
+        return '../utils/bal_params'
+    }
     else {
         return '../utils/main_params'
     }
