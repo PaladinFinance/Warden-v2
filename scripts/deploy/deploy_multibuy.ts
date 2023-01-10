@@ -8,8 +8,8 @@ const network = hre.network.name;
 const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
 
 const params_path = () => {
-    if (network === 'fork') {
-        return '../utils/fork_params'
+    if (network === 'kovan') {
+        return '../utils/kovan_params'
     }
     else if(VE_TOKEN === "VESDT") {
         return '../utils/sdt_params'
@@ -31,54 +31,45 @@ const {
     FEE_TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
     DELEGATION_BOOST_ADDRESS,
-    FEE_RATIO,
-    MIN_PERCENT_REQUIRED,
-    ADVISED_PRICE
+    WARDEN_ADDRESS
 } = require(param_file_path);
 
 
 async function main() {
 
-    console.log('Deploying Warden  ...')
+    console.log('Deploying WardenMultiBuy  ...')
 
     const deployer = (await hre.ethers.getSigners())[0];
 
-    const Warden = await ethers.getContractFactory("Warden");
+    const MultiBuy = await ethers.getContractFactory("WardenMultiBuy");
 
 
 
-    const warden = await Warden.deploy(
+    const multiBuy = await MultiBuy.deploy(
         FEE_TOKEN_ADDRESS,
         VOTING_ESCROW_ADDRESS,
         DELEGATION_BOOST_ADDRESS,
-        FEE_RATIO,
-        MIN_PERCENT_REQUIRED,
-        ADVISED_PRICE
+        WARDEN_ADDRESS
     );
-    await warden.deployed();
+    await multiBuy.deployed();
 
-    console.log('Warden : ')
-    console.log(warden.address)
-
-
-
-    await warden.deployTransaction.wait(30);
+    console.log('Warden MultiBuy : ')
+    console.log(multiBuy.address)
 
 
 
-    if(network == "mainnet"){
-        await hre.run("verify:verify", {
-            address: warden.address,
-            constructorArguments: [
-                FEE_TOKEN_ADDRESS,
-                VOTING_ESCROW_ADDRESS,
-                DELEGATION_BOOST_ADDRESS,
-                FEE_RATIO,
-                MIN_PERCENT_REQUIRED,
-                ADVISED_PRICE
-            ],
-        });
-    }
+    await multiBuy.deployTransaction.wait(30);
+
+
+    await hre.run("verify:verify", {
+        address: multiBuy.address,
+        constructorArguments: [
+            FEE_TOKEN_ADDRESS,
+            VOTING_ESCROW_ADDRESS,
+            DELEGATION_BOOST_ADDRESS,
+            WARDEN_ADDRESS
+        ],
+    });
 
 }
 

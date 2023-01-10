@@ -698,7 +698,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @return bool: success
     */
     function recoverERC20(address token) external nonReentrant onlyOwner returns(bool) {
-
         uint256 currentBalance = IERC20(token).balanceOf(address(this));
         if(currentBalance == 0) revert Errors.NullValue();
         uint256 amount;

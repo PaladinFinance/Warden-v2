@@ -80,10 +80,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     bool private _claimBlocked;
 
-    /** @notice Price per vote advised by the maangers for users that don't handle their pricing themselves */
+    /** @notice Price per vote advised by the managers for users that don't handle their pricing themselves */
     uint256 public advisedPrice;
 
-    /** @notice Address approved to mamange the advised price */
+    /** @notice Address approved to manage the advised price */
     mapping(address => bool) public approvedManagers;
 
     /** @notice Next period to update for the Reward State */

@@ -9,6 +9,7 @@ import { IVotingEscrow } from "../../typechain/interfaces/IVotingEscrow";
 import { IVotingEscrow__factory } from "../../typechain/factories/interfaces/IVotingEscrow__factory";
 import { IBoostV2 } from "../../typechain/interfaces/IBoostV2";
 import { IBoostV2__factory } from "../../typechain/factories/interfaces/IBoostV2__factory";
+import { BoostV2 } from "../../typechain/tests/BoostV2.vy/BoostV2";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -19,15 +20,25 @@ import {
     resetFork,
 } from "../utils/utils";
 
+let constants_path = "../utils/constant" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if(VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constant"
+else if(VE_TOKEN === "VEANGLE") constants_path = "../utils/angle-constant"
+else if(VE_TOKEN === "VESDT") constants_path = "../utils/sdt-constant"
+
+
 const {
     TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
     BOOST_DELEGATION_ADDRESS,
     BIG_HOLDER,
-    VECRV_LOCKING_TIME,
+    VETOKEN_LOCKING_TIME,
     PAL_TOKEN_ADDRESS,
-    PAL_HOLDER
-} = require("../utils/constant");
+    PAL_HOLDER,
+    BLOCK_NUMBER,
+    OLD_BOOST_DELEGATON_ADDRESS
+} = require(constants_path);
 
 
 chai.use(solidity);
@@ -45,7 +56,7 @@ const minDropPerVote = ethers.utils.parseEther('0.001')
 const targetPurchaseAmount = ethers.utils.parseEther('500000')
 
 
-describe('Warden rewards tests', () => {
+describe('Warden rewards tests - ' + VE_TOKEN + ' version', () => {
     let admin: SignerWithAddress
     let reserveManager: SignerWithAddress
     let priceManager: SignerWithAddress
@@ -55,13 +66,13 @@ describe('Warden rewards tests', () => {
 
     let warden: Warden
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let BaseToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IBoostV2
 
     let rewardToken: IERC20
 
-    const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
+    const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50BaseToken for a 1000 veToken boost for a week
 
     const expiry_time = 0 // so Warden will use the lock end instead
 
@@ -70,56 +81,99 @@ describe('Warden rewards tests', () => {
     const total_reward_amount = ethers.utils.parseEther('20000');
 
     before(async () => {
-        await resetFork();
-
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const crv_amount = ethers.utils.parseEther('4000000');
-        const lock_amount = ethers.utils.parseEther('3000000');
+        BaseToken = IERC20__factory.connect(TOKEN_ADDRESS, provider);
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
-
-        delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        //delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
 
         rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
-
-        await getERC20(admin, BIG_HOLDER, CRV, delegator.address, crv_amount);
-
-        await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('2500000'));
-
-        await CRV.connect(delegator).approve(veCRV.address, 0);
-        await CRV.connect(delegator).approve(veCRV.address, crv_amount);
-        const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = VECRV_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
-        if (locked_balance.eq(0)) {
-            await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if (locked_balance.lt(lock_amount)) {
-            await veCRV.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
-        }
-
-        await CRV.connect(delegator).transfer(receiver.address, crv_amount.sub(lock_amount));
-
     })
 
 
     beforeEach(async () => {
+        await resetFork(BLOCK_NUMBER);
+
+        if(BOOST_DELEGATION_ADDRESS != ethers.constants.AddressZero){
+            delegationBoost = IBoostV2__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        }
+        else {
+            let boostFactory = await ethers.getContractFactory("BoostV2");
+            delegationBoost = (await boostFactory.connect(admin).deploy(
+                OLD_BOOST_DELEGATON_ADDRESS,
+                veToken.address
+            )) as IBoostV2;
+            await delegationBoost.deployed();
+        }
 
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            BaseToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
             base_advised_price
         )) as Warden;
         await warden.deployed();
+
+        const baseToken_amount = ethers.utils.parseEther('1000000');
+        const lock_amount = ethers.utils.parseEther('500000');
+
+        await getERC20(admin, BIG_HOLDER, BaseToken, delegator.address, baseToken_amount);
+
+        await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('2500000'));
+
+        if(VE_TOKEN === "VEBAL") {
+            const LBP_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+            const SLOT = 0
+
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
+
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [delegator.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(lock_amount.toString()).toString(),
+            ]);
+
+            await LBP_Token.connect(delegator).approve(veToken.address, 0);
+            await LBP_Token.connect(delegator).approve(veToken.address, lock_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if(locked_balance.eq(0)){
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if(locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount);
+        } else{
+            await BaseToken.connect(delegator).approve(veToken.address, 0);
+            await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount.sub(lock_amount));
+        }
 
         await delegationBoost.connect(delegator).approve(warden.address, ethers.constants.MaxUint256);
 
@@ -138,8 +192,8 @@ describe('Warden rewards tests', () => {
         const warden_reserveAmount = await warden.reserveAmount();
         const warden_reserveManager = await warden.reserveManager();
 
-        expect(warden_feeToken).to.be.eq(CRV.address);
-        expect(warden_votingEscrow).to.be.eq(veCRV.address);
+        expect(warden_feeToken).to.be.eq(BaseToken.address);
+        expect(warden_votingEscrow).to.be.eq(veToken.address);
         expect(warden_delegationBoost).to.be.eq(delegationBoost.address);
         expect(warden_feeReserveRatio).to.be.eq(500);
         expect(warden_minPercRequired).to.be.eq(1000);
@@ -215,14 +269,14 @@ describe('Warden rewards tests', () => {
 
         const max_duration = 10
 
-        const buy_amount = ethers.utils.parseEther("1000000")
+        const buy_amount = ethers.utils.parseEther("100000")
         const duration = 2
 
         let fee_amount: BigNumber;
 
         beforeEach(async () => {
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
@@ -580,7 +634,7 @@ describe('Warden rewards tests', () => {
                 targetPurchaseAmount
             )
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK.toNumber())
 
@@ -1024,7 +1078,7 @@ describe('Warden rewards tests', () => {
 
         let fee_amount: BigNumber;
 
-        const new_targetPurchaseAmount = ethers.utils.parseEther('150000')
+        const new_targetPurchaseAmount = ethers.utils.parseEther('200000')
 
         beforeEach(async () => {
 
@@ -1037,7 +1091,7 @@ describe('Warden rewards tests', () => {
 
             await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await BaseToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK.toNumber())
 
@@ -1052,7 +1106,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.add(objective_amount.div(2)).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_amount = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1092,7 +1146,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.add(objective_amount).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_amount = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1124,7 +1178,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.sub(objective_amount.div(2)).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_amount = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1167,7 +1221,7 @@ describe('Warden rewards tests', () => {
 
             let needed_amount = objective_amount.div(4).sub(current_extra)
 
-            let delegator_balance = await veCRV.balanceOf(delegator.address)
+            let delegator_balance = await veToken.balanceOf(delegator.address)
 
             let buy_amount = needed_amount.mul(10000).div(delegator_balance)
             let duration = 2
@@ -1201,7 +1255,7 @@ describe('Warden rewards tests', () => {
                 objective_amount.div(10)
             ).add(current_remaining).sub(current_extra)
 
-            delegator_balance = await veCRV.balanceOf(delegator.address)
+            delegator_balance = await veToken.balanceOf(delegator.address)
 
             buy_amount = needed_amount.mul(10000).div(delegator_balance)
             duration = 3
@@ -1242,7 +1296,7 @@ describe('Warden rewards tests', () => {
 
             let needed_amount = objective_amount.div(2).add(current_remaining).sub(current_extra)
 
-            let delegator_balance = await veCRV.balanceOf(delegator.address)
+            let delegator_balance = await veToken.balanceOf(delegator.address)
 
             let buy_amount = needed_amount.mul(10000).div(delegator_balance)
             let duration = 2
