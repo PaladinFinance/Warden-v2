@@ -26,6 +26,7 @@ const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
 if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constant"
 else if(VE_TOKEN === "VEANGLE") constants_path = "./utils/angle-constant"
 else if(VE_TOKEN === "VESDT") constants_path = "./utils/sdt-constant"
+else if(VE_TOKEN === "VELIT") constants_path = "./utils/lit-constant"
 
 
 const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VETOKEN_LOCKING_TIME, BLOCK_NUMBER, OLD_BOOST_DELEGATON_ADDRESS } = require(constants_path);
@@ -112,7 +113,40 @@ describe('Warden contract tests - ' + VE_TOKEN + ' version', () => {
 
             await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount);
 
-        } else{
+        } 
+        else if(VE_TOKEN === "VELIT") {
+            const LBP_address = "0x9232a548DD9E81BaC65500b5e0d918F8Ba93675C"
+            const SLOT = 0
+
+            const LBP_Token = IERC20__factory.connect(LBP_address, provider);
+
+            const index = ethers.utils.solidityKeccak256(
+                ["uint256", "uint256"],
+                [delegator.address, SLOT] // key, slot
+            );
+
+            await hre.network.provider.send("hardhat_setStorageAt", [
+                LBP_address,
+                index.toString(),
+                ethers.utils.formatBytes32String(lock_amount.toString()).toString(),
+            ]);
+
+            await LBP_Token.connect(delegator).approve(veToken.address, lock_amount);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+            if(locked_balance.eq(0)){
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if(locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await BaseToken.connect(delegator).transfer(receiver.address, baseToken_amount);
+
+        } 
+        else{
             await BaseToken.connect(delegator).approve(veToken.address, baseToken_amount);
             const locked_balance = (await veToken.locked(delegator.address)).amount
             const lock_time = VETOKEN_LOCKING_TIME.add((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)

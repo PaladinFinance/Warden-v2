@@ -11,6 +11,7 @@
     "test-vebal": "VE_TOKEN=VEBAL npx hardhat test",
     "test-veangle": "VE_TOKEN=VEANGLE npx hardhat test",
     "test-vesdt": "VE_TOKEN=VESDT npx hardhat test",
+    "test-velit": "VE_TOKEN=VELIT npx hardhat test",
     "coverage": "npx hardhat coverage --network hardhat --solcoverjs .solcover.js",
     "deploy": "npx hardhat run --network mainnet",
     "deploy_fork": "npx hardhat run --network fork",

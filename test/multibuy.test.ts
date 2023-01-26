@@ -28,6 +28,7 @@ const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
 if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constant"
 else if(VE_TOKEN === "VEANGLE") constants_path = "./utils/angle-constant"
 else if(VE_TOKEN === "VESDT") constants_path = "./utils/sdt-constant"
+else if(VE_TOKEN === "VELIT") constants_path = "./utils/lit-constant"
 
 
 const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VETOKEN_LOCKING_TIME, BLOCK_NUMBER, OLD_BOOST_DELEGATON_ADDRESS } = require(constants_path);
