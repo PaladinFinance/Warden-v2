@@ -235,7 +235,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
         expect(wardenPledge_votingEscrow).to.be.eq(veToken.address);
         expect(wardenPledge_delegationBoost).to.be.eq(delegationBoost.address);
         expect(wardenPledge_chestAddress).to.be.eq(chest.address);
-        expect(wardenPledge_protocalFeeRatio).to.be.eq(100);
+        expect(wardenPledge_protocalFeeRatio).to.be.eq(250);
         expect(wardenPledge_minTargetVotes).to.be.eq(min_vote_diff);
 
         expect(await wardenPledge.UNIT()).to.be.eq(ethers.utils.parseEther('1'));
