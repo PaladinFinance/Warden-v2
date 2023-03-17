@@ -86,6 +86,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address indexed creator,
         address indexed receiver,
         address indexed rewardToken,
+        uint256 id,
         uint256 targetVotes,
         uint256 rewardPerVote,
         uint256 endTimestamp
@@ -355,7 +356,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         pledgeOwner[vars.newPledgeID] = creator;
         ownerPledges[creator].push(vars.newPledgeID);
 
-        emit NewPledge(creator, receiver, rewardToken, targetVotes, rewardPerVote, endTimestamp);
+        emit NewPledge(creator, receiver, rewardToken, vars.newPledgeID, targetVotes, rewardPerVote, endTimestamp);
 
         return vars.newPledgeID;
     }

@@ -672,6 +672,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     creator.address,
                     receiver.address,
                     rewardToken1.address,
+                    expected_id,
                     target_votes,
                     reward_per_vote,
                     end_timestamp
@@ -826,6 +827,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     creator.address,
                     receiver.address,
                     rewardToken1.address,
+                    expected_id,
                     target_votes,
                     reward_per_vote,
                     end_timestamp
@@ -924,6 +926,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     creator.address,
                     receiver.address,
                     rewardToken1.address,
+                    expected_id,
                     target_votes,
                     reward_per_vote,
                     end_timestamp
@@ -1009,6 +1012,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     creator.address,
                     receiver.address,
                     rewardToken2.address,
+                    expected_id,
                     target_votes2,
                     reward_per_vote2,
                     end_timestamp2
@@ -1110,6 +1114,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     other_creator.address,
                     receiver.address,
                     rewardToken2.address,
+                    expected_id,
                     target_votes2,
                     reward_per_vote2,
                     end_timestamp2
@@ -1211,6 +1216,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     other_creator.address,
                     receiver.address,
                     rewardToken1.address,
+                    expected_id,
                     target_votes2,
                     reward_per_vote2,
                     end_timestamp2
@@ -1312,6 +1318,7 @@ describe('Warden Pledge contract tests - ' + VE_TOKEN + ' version', () => {
                     creator.address,
                     receiver.address,
                     rewardToken1.address,
+                    expected_id,
                     target_votes2,
                     reward_per_vote2,
                     end_timestamp2
