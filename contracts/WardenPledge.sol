@@ -33,8 +33,8 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     struct Pledge{
         // Target amount of veCRV (balance scaled by Boost v2, fetched as adjusted_balance)
         uint256 targetVotes;
-        // Price per vote per second, set by the owner
-        uint256 rewardPerVote;
+        // Price per vote per week, set by the owner
+        uint256 rewardPerVotePerWeek;
         // Address to receive the Boosts
         address receiver;
         // Address of the token given as rewards to Boosters
@@ -88,13 +88,13 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address indexed rewardToken,
         uint256 id,
         uint256 targetVotes,
-        uint256 rewardPerVote,
+        uint256 rewardPerVotePerWeek,
         uint256 endTimestamp
     );
     /** @notice Event emitted when a Pledge duration is extended */
     event ExtendPledgeDuration(uint256 indexed pledgeId, uint256 oldEndTimestamp, uint256 newEndTimestamp);
     /** @notice Event emitted when a Pledge reward per vote is increased */
-    event IncreasePledgeRewardPerVote(uint256 indexed pledgeId, uint256 oldRewardPerVote, uint256 newRewardPerVote);
+    event IncreasePledgeRewardPerVote(uint256 indexed pledgeId, uint256 oldrewardPerVotePerWeek, uint256 newrewardPerVotePerWeek);
     /** @notice Event emitted when a Pledge is closed */
     event ClosePledge(uint256 indexed pledgeId);
     /** @notice Event emitted when rewards are retrieved from a closed Pledge */
@@ -104,9 +104,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     event Pledged(uint256 indexed pledgeId, address indexed user, uint256 amount, uint256 endTimestamp);
 
     /** @notice Event emitted when a new reward token is added to the list */
-    event NewRewardToken(address indexed token, uint256 minRewardPerSecond);
+    event NewRewardToken(address indexed token, uint256 minRewardPerWeek);
     /** @notice Event emitted when a reward token parameter is updated */
-    event UpdateRewardToken(address indexed token, uint256 minRewardPerSecond);
+    event UpdateRewardToken(address indexed token, uint256 minRewardPerWeek);
     /** @notice Event emitted when a reward token is removed from the list */
     event RemoveRewardToken(address indexed token);
 
@@ -269,7 +269,10 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // each second of the Boost duration
         uint256 totalDelegatedAmount = ((bias * boostDuration) + bias) / 2;
         // Then we can calculate the total amount of rewards for this Boost
-        uint256 rewardAmount = (totalDelegatedAmount * pledgeParams.rewardPerVote) / UNIT;
+        // And scale it back to reward/vote/second
+        uint256 rewardAmount = ((totalDelegatedAmount * pledgeParams.rewardPerVotePerWeek) / WEEK) / UNIT;
+
+        if(rewardAmount == 0) revert Errors.NoRewards();
 
         address _rewardToken = pledgeParams.rewardToken;
         if(rewardAmount > pledgeAvailableRewardAmounts[pledgeId]) revert Errors.RewardsBalanceTooLow();
@@ -298,7 +301,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param receiver Address to receive the boost delegation
     * @param rewardToken Address of the token distributed as reward
     * @param targetVotes Maximum target of votes to have (own balance + delegation) for the receiver
-    * @param rewardPerVote Amount of reward given for each vote delegation (per second)
+    * @param rewardPerVotePerWeek Amount of reward given for each vote delegation (per week)
     * @param endTimestamp End of the Pledge
     * @param maxTotalRewardAmount Maximum total reward amount allowed to be pulled by this contract
     * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
@@ -308,7 +311,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         address receiver,
         address rewardToken,
         uint256 targetVotes,
-        uint256 rewardPerVote, // reward/veToken/second
+        uint256 rewardPerVotePerWeek, // reward/veToken/week
         uint256 endTimestamp,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
@@ -318,7 +321,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(receiver == address(0) || rewardToken == address(0)) revert Errors.ZeroAddress();
         uint256 _minAmountRewardToken = minAmountRewardToken[rewardToken];
         if(_minAmountRewardToken == 0) revert Errors.TokenNotWhitelisted();
-        if(rewardPerVote < _minAmountRewardToken) revert Errors.RewardPerVoteTooLow();
+        if(rewardPerVotePerWeek < _minAmountRewardToken) revert Errors.RewardPerVoteTooLow();
 
         if(endTimestamp == 0) revert Errors.NullEndTimestamp();
         if(endTimestamp != _getRoundedTimestamp(endTimestamp) || endTimestamp < block.timestamp) revert Errors.InvalidEndTimestamp();
@@ -327,7 +330,9 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         
         vars.totalVotes = _getTotalVotesForDuration(receiver, targetVotes, endTimestamp);
 
-        vars.totalRewardAmount = (rewardPerVote * vars.totalVotes) / UNIT;
+        // We receive rewards rate weekly, and calculate the totalVotes based on the full duration in
+        // seconds, so we scale back the reward/vote to seconds here
+        vars.totalRewardAmount = ((rewardPerVotePerWeek * vars.totalVotes) / WEEK) / UNIT;
         vars.feeAmount = (vars.totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(vars.totalRewardAmount == 0 || vars.feeAmount == 0) revert Errors.NullAmount();
         if(vars.totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -346,7 +351,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
 
         pledges.push(Pledge(
             targetVotes,
-            rewardPerVote,
+            rewardPerVotePerWeek,
             receiver,
             rewardToken,
             safe64(endTimestamp),
@@ -356,7 +361,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         pledgeOwner[vars.newPledgeID] = creator;
         ownerPledges[creator].push(vars.newPledgeID);
 
-        emit NewPledge(creator, receiver, rewardToken, vars.newPledgeID, targetVotes, rewardPerVote, endTimestamp);
+        emit NewPledge(creator, receiver, rewardToken, vars.newPledgeID, targetVotes, rewardPerVotePerWeek, endTimestamp);
 
         return vars.newPledgeID;
     }
@@ -385,7 +390,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(oldEndTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
         address _rewardToken = pledgeParams.rewardToken;
         if(minAmountRewardToken[_rewardToken] == 0) revert Errors.TokenNotWhitelisted();
-        if(pledgeParams.rewardPerVote < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
+        if(pledgeParams.rewardPerVotePerWeek < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
 
         if(newEndTimestamp == 0) revert Errors.NullEndTimestamp();
         if(newEndTimestamp != _getRoundedTimestamp(newEndTimestamp) || newEndTimestamp < oldEndTimestamp) revert Errors.InvalidEndTimestamp();
@@ -400,7 +405,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // (the subsctraction removes the Total Votes for the common duration between the 2 endTimestamps)
         uint256 oldEndTotalRemaingVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, oldEndTimestamp);
         uint256 totalVotesAddedDuration = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, newEndTimestamp) - oldEndTotalRemaingVotes;
-        uint256 totalRewardAmount = (pledgeParams.rewardPerVote * totalVotesAddedDuration) / UNIT;
+        uint256 totalRewardAmount = ((pledgeParams.rewardPerVotePerWeek * totalVotesAddedDuration) / WEEK) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -425,13 +430,13 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @notice Increases the Pledge reward per vote delegated
     * @dev Increases the Pledge reward per vote delegated & add rewards for that new duration
     * @param pledgeId ID of the Pledge
-    * @param newRewardPerVote New amount of reward given for each vote delegation (per second)
+    * @param newRewardPerVotePerWeek New amount of reward given for each vote delegation (per week)
     * @param maxTotalRewardAmount Maximum added total reward amount allowed to be pulled by this contract
     * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     */
     function increasePledgeRewardPerVote(
         uint256 pledgeId,
-        uint256 newRewardPerVote,
+        uint256 newRewardPerVotePerWeek,
         uint256 maxTotalRewardAmount,
         uint256 maxFeeAmount
     ) external nonReentrant whenNotPaused {
@@ -445,15 +450,15 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         if(_endTimestamp <= block.timestamp) revert Errors.ExpiredPledge();
         address _rewardToken = pledgeParams.rewardToken;
         if(minAmountRewardToken[_rewardToken] == 0) revert Errors.TokenNotWhitelisted();
-        if(pledgeParams.rewardPerVote < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
+        if(pledgeParams.rewardPerVotePerWeek < minAmountRewardToken[_rewardToken]) revert Errors.RewardPerVoteTooLow();
 
-        uint256 oldRewardPerVote = pledgeParams.rewardPerVote;
-        if(newRewardPerVote <= oldRewardPerVote) revert Errors.RewardsPerVotesTooLow();
-        uint256 rewardPerVoteDiff = newRewardPerVote - oldRewardPerVote;
+        uint256 oldRewardPerVotePerWeek = pledgeParams.rewardPerVotePerWeek;
+        if(newRewardPerVotePerWeek <= oldRewardPerVotePerWeek) revert Errors.RewardsPerVotesTooLow();
+        uint256 rewardPerVoteDiff = newRewardPerVotePerWeek - oldRewardPerVotePerWeek;
 
         uint256 totalVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, _endTimestamp);
         
-        uint256 totalRewardAmount = (rewardPerVoteDiff * totalVotes) / UNIT;
+        uint256 totalRewardAmount = ((rewardPerVoteDiff * totalVotes) / WEEK) / UNIT;
         uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
         if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
@@ -465,12 +470,12 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
 
         // Update the Pledge parameters in storage
-        pledgeParams.rewardPerVote = newRewardPerVote;
+        pledgeParams.rewardPerVotePerWeek = newRewardPerVotePerWeek;
 
         pledgeAvailableRewardAmounts[pledgeId] += totalRewardAmount;
         rewardTokenTotalAmount[_rewardToken] += totalRewardAmount;
 
-        emit IncreasePledgeRewardPerVote(pledgeId, oldRewardPerVote, newRewardPerVote);
+        emit IncreasePledgeRewardPerVote(pledgeId, oldRewardPerVotePerWeek, newRewardPerVotePerWeek);
     }
 
     /**
@@ -567,32 +572,32 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     /**
     * @dev Adds a given reward token to the whitelist
     * @param token Address of the token
-    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
+    * @param minRewardPerWeek Minimum amount of reward per vote per week for the token
     */
-    function _addRewardToken(address token, uint256 minRewardPerSecond) internal {
+    function _addRewardToken(address token, uint256 minRewardPerWeek) internal {
         if(token == address(0)) revert Errors.ZeroAddress();
-        if(minRewardPerSecond == 0) revert Errors.NullValue();
+        if(minRewardPerWeek == 0) revert Errors.NullValue();
         if(minAmountRewardToken[token] != 0) revert Errors.AlreadyAllowedToken();
         
-        minAmountRewardToken[token] = minRewardPerSecond;
+        minAmountRewardToken[token] = minRewardPerWeek;
 
-        emit NewRewardToken(token, minRewardPerSecond);
+        emit NewRewardToken(token, minRewardPerWeek);
     }
 
     /**
     * @notice Adds a given reward token to the whitelist
     * @dev Adds a given reward token to the whitelist
     * @param tokens List of token addresses to add
-    * @param minRewardsPerSecond Minimum amount of reward per vote per second for each token in the list
+    * @param minRewardsPerWeek Minimum amount of reward per vote per week for each token in the list
     */
-    function addMultipleRewardToken(address[] calldata tokens, uint256[] calldata minRewardsPerSecond) external onlyOwner {
+    function addMultipleRewardToken(address[] calldata tokens, uint256[] calldata minRewardsPerWeek) external onlyOwner {
         uint256 length = tokens.length;
 
         if(length == 0) revert Errors.EmptyArray();
-        if(length != minRewardsPerSecond.length) revert Errors.UnequalArraySizes();
+        if(length != minRewardsPerWeek.length) revert Errors.UnequalArraySizes();
 
         for(uint256 i; i < length;){
-            _addRewardToken(tokens[i], minRewardsPerSecond[i]);
+            _addRewardToken(tokens[i], minRewardsPerWeek[i]);
 
             unchecked{ ++i; }
         }
@@ -602,26 +607,26 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @notice Adds a given reward token to the whitelist
     * @dev Adds a given reward token to the whitelist
     * @param token Address of the token
-    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
+    * @param minRewardPerWeek Minimum amount of reward per vote per week for the token
     */
-    function addRewardToken(address token, uint256 minRewardPerSecond) external onlyOwner {
-        _addRewardToken(token, minRewardPerSecond);
+    function addRewardToken(address token, uint256 minRewardPerWeek) external onlyOwner {
+        _addRewardToken(token, minRewardPerWeek);
     }
 
     /**
     * @notice Updates a reward token
     * @dev Updates a reward token
     * @param token Address of the token
-    * @param minRewardPerSecond Minimum amount of reward per vote per second for the token
+    * @param minRewardPerWeek Minimum amount of reward per vote per week for the token
     */
-    function updateRewardToken(address token, uint256 minRewardPerSecond) external onlyOwner {
+    function updateRewardToken(address token, uint256 minRewardPerWeek) external onlyOwner {
         if(token == address(0)) revert Errors.ZeroAddress();
         if(minAmountRewardToken[token] == 0) revert Errors.NotAllowedToken();
-        if(minRewardPerSecond == 0) revert Errors.InvalidValue();
+        if(minRewardPerWeek == 0) revert Errors.InvalidValue();
 
-        minAmountRewardToken[token] = minRewardPerSecond;
+        minAmountRewardToken[token] = minRewardPerWeek;
 
-        emit UpdateRewardToken(token, minRewardPerSecond);
+        emit UpdateRewardToken(token, minRewardPerWeek);
     }
 
     /**

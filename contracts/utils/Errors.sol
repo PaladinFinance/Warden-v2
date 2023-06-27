@@ -102,6 +102,7 @@ library Errors {
     error RewardsBalanceTooLow();
     error InsufficientAllowance();
     error EmptyBoost();
+    error NoRewards();
 
     // Math Errors
     error NumberExceed64Bits();
