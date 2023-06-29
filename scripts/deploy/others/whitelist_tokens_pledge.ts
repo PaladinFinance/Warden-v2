@@ -29,9 +29,9 @@ const token_list = [
     "0xAB846Fb6C81370327e784Ae7CbB6d6a6af6Ff4BF",
 ]
 const minTokenAmounts = [
-    ethers.utils.parseEther('0.00000000005'),
-    ethers.utils.parseEther('0.0000000001'),
-    ethers.utils.parseEther('0.0000000001'),
+    ethers.utils.parseEther('0.0001'),
+    ethers.utils.parseEther('0.00001'),
+    ethers.utils.parseEther('0.000075'),
 ]
 
 
