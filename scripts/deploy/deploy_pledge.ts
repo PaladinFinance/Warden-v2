@@ -60,9 +60,9 @@ async function main() {
             address: pledge.address,
             constructorArguments: [
                 VOTING_ESCROW_ADDRESS,
-        DELEGATION_BOOST_ADDRESS,
-        CHEST_ADDRESS,
-        min_vote_diff
+                DELEGATION_BOOST_ADDRESS,
+                CHEST_ADDRESS,
+                min_vote_diff
             ],
         });
     }
