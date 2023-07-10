@@ -7,9 +7,21 @@ import "@nomiclabs/hardhat-etherscan";
 import "solidity-coverage";
 import "hardhat-gas-reporter";
 import "@nomiclabs/hardhat-vyper";
+import path from 'path';
+import fs from 'fs';
 
 require("dotenv").config();
 
+['fork'].forEach(
+  (folder) => {
+    const tasksPath = path.join(__dirname, 'tasks', folder);
+    fs.readdirSync(tasksPath)
+      .filter((pth) => pth.includes('.ts'))
+      .forEach((task) => {
+        require(`${tasksPath}/${task}`);
+      });
+  }
+);
 
 const TEST_MNEMONIC = "test test test test test test test test test test test junk";
 const TEST_ACCOUNT = { mnemonic: TEST_MNEMONIC, }

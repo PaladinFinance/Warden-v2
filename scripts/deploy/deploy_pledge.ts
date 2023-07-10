@@ -28,54 +28,41 @@ const params_path = () => {
 const param_file_path = params_path();
 
 const {
-    FEE_TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
     DELEGATION_BOOST_ADDRESS,
-    FEE_RATIO,
-    MIN_PERCENT_REQUIRED,
-    ADVISED_PRICE
+    CHEST_ADDRESS,
 } = require(param_file_path);
 
 
 async function main() {
 
-    console.log('Deploying Warden  ...')
+    console.log('Deploying Warden Pledge ...')
 
-    const deployer = (await hre.ethers.getSigners())[0];
+    const min_vote_diff = ethers.utils.parseEther('1000')
 
-    const Warden = await ethers.getContractFactory("Warden");
+    const Pledge = await ethers.getContractFactory("WardenPledge");
 
-
-
-    const warden = await Warden.deploy(
-        FEE_TOKEN_ADDRESS,
+    const pledge = await Pledge.deploy(
         VOTING_ESCROW_ADDRESS,
         DELEGATION_BOOST_ADDRESS,
-        FEE_RATIO,
-        MIN_PERCENT_REQUIRED,
-        ADVISED_PRICE
+        CHEST_ADDRESS,
+        min_vote_diff
     );
-    await warden.deployed();
+    await pledge.deployed();
 
-    console.log('Warden : ')
-    console.log(warden.address)
+    console.log('Warden Pledge : ')
+    console.log(pledge.address)
 
-
-
-    await warden.deployTransaction.wait(30);
-
-
+    await pledge.deployTransaction.wait(30);
 
     if(network == "mainnet"){
         await hre.run("verify:verify", {
-            address: warden.address,
+            address: pledge.address,
             constructorArguments: [
-                FEE_TOKEN_ADDRESS,
                 VOTING_ESCROW_ADDRESS,
                 DELEGATION_BOOST_ADDRESS,
-                FEE_RATIO,
-                MIN_PERCENT_REQUIRED,
-                ADVISED_PRICE
+                CHEST_ADDRESS,
+                min_vote_diff
             ],
         });
     }

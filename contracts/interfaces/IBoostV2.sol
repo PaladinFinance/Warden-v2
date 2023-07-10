@@ -5,6 +5,14 @@ pragma solidity ^0.8.4;
 /** @title Custom Interface for Curve BoostV2 contract  */
 interface IBoostV2 {
 
+    event Boost(
+        address indexed _from,
+        address indexed _to,
+        uint256 _bias,
+        uint256 _slope,
+        uint256 _start
+    );
+
     function balanceOf(address _user) external view returns(uint256);
     function allowance(address _user, address _spender) external view returns(uint256);
 
