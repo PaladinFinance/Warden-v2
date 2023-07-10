@@ -27,6 +27,10 @@ const WARDEN_LENS_ADDRESS = ""
 //const WARDEN_PLEDGE = "0x09F818fD47b0D4CFD139786026739d79Bb7738a4" // Tenderly fork
 const WARDEN_PLEDGE = "0xb24E091616Cb4512Ab9C792d629Dd87bB528D6fe" // Custom Fork 47
 
+/* Tenderly fork last tests : 
+const WARDEN_PLEDGE_SDT = "0x5796d6346b515cc3997e764dd32103f9ae09fb80"
+*/
+
 module.exports = {
     FEE_TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
