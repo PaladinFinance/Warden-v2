@@ -279,6 +279,13 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         pledgeAvailableRewardAmounts[pledgeId] -= rewardAmount;
         rewardTokenTotalAmount[_rewardToken] -= rewardAmount;
 
+        uint256 feeAmount = (rewardAmount * protocolFeeRatio) / MAX_PCT;
+        rewardAmount = rewardAmount - feeAmount;
+
+        // Take fees, transfer them to the Chest contract
+        // And transfer the fees from the Pledge creator to the Chest contract
+        IERC20(_rewardToken).safeTransfer(chestAddress, feeAmount);
+
         // Send the rewards to the user
         IERC20(_rewardToken).safeTransfer(user, rewardAmount);
 
@@ -291,7 +298,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     struct CreatePledgeVars {
         uint256 totalVotes;
         uint256 totalRewardAmount;
-        uint256 feeAmount;
         uint256 newPledgeID;
     }
 
@@ -304,7 +310,6 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param rewardPerVotePerWeek Amount of reward given for each vote delegation (per week)
     * @param endTimestamp End of the Pledge
     * @param maxTotalRewardAmount Maximum total reward amount allowed to be pulled by this contract
-    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     * @return uint256: Newly created Pledge ID
     */ 
     function createPledge(
@@ -313,8 +318,7 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 targetVotes,
         uint256 rewardPerVotePerWeek, // reward/veToken/week
         uint256 endTimestamp,
-        uint256 maxTotalRewardAmount,
-        uint256 maxFeeAmount
+        uint256 maxTotalRewardAmount
     ) external nonReentrant whenNotPaused returns(uint256){
         address creator = msg.sender;
 
@@ -333,15 +337,11 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         // We receive rewards rate weekly, and calculate the totalVotes based on the full duration in
         // seconds, so we scale back the reward/vote to seconds here
         vars.totalRewardAmount = ((rewardPerVotePerWeek * vars.totalVotes) / WEEK) / UNIT;
-        vars.feeAmount = (vars.totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
-        if(vars.totalRewardAmount == 0 || vars.feeAmount == 0) revert Errors.NullAmount();
+        if(vars.totalRewardAmount == 0) revert Errors.NullAmount();
         if(vars.totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
-        if(vars.feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
         IERC20(rewardToken).safeTransferFrom(creator, address(this), vars.totalRewardAmount);
-        // And transfer the fees from the Pledge creator to the Chest contract
-        IERC20(rewardToken).safeTransferFrom(creator, chestAddress, vars.feeAmount);
 
         vars.newPledgeID = pledges.length;
 
@@ -372,13 +372,11 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param pledgeId ID of the Pledge
     * @param newEndTimestamp New end of the Pledge
     * @param maxTotalRewardAmount Maximum added total reward amount allowed to be pulled by this contract
-    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     */
     function extendPledge(
         uint256 pledgeId,
         uint256 newEndTimestamp,
-        uint256 maxTotalRewardAmount,
-        uint256 maxFeeAmount
+        uint256 maxTotalRewardAmount
     ) external nonReentrant whenNotPaused {
         if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
@@ -406,16 +404,12 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 oldEndTotalRemaingVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, oldEndTimestamp);
         uint256 totalVotesAddedDuration = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, newEndTimestamp) - oldEndTotalRemaingVotes;
         uint256 totalRewardAmount = ((pledgeParams.rewardPerVotePerWeek * totalVotesAddedDuration) / WEEK) / UNIT;
-        uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
-        if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
+        if(totalRewardAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
-        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
 
         // Pull all the rewards in this contract
         IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
-        // And transfer the fees from the Pledge creator to the Chest contract
-        IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
 
         // Update the Pledge parameters in storage
         pledgeParams.endTimestamp = safe64(newEndTimestamp);
@@ -432,13 +426,11 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
     * @param pledgeId ID of the Pledge
     * @param newRewardPerVotePerWeek New amount of reward given for each vote delegation (per week)
     * @param maxTotalRewardAmount Maximum added total reward amount allowed to be pulled by this contract
-    * @param maxFeeAmount Maximum fee amount allowed to be pulled by this contract
     */
     function increasePledgeRewardPerVote(
         uint256 pledgeId,
         uint256 newRewardPerVotePerWeek,
-        uint256 maxTotalRewardAmount,
-        uint256 maxFeeAmount
+        uint256 maxTotalRewardAmount
     ) external nonReentrant whenNotPaused {
         if(pledgeId >= pledges.length) revert Errors.InvalidPledgeID();
         address creator = pledgeOwner[pledgeId];
@@ -459,15 +451,11 @@ contract WardenPledge is Owner, Pausable, ReentrancyGuard {
         uint256 totalVotes = _getTotalVotesForDuration(pledgeParams.receiver, pledgeParams.targetVotes, _endTimestamp);
         
         uint256 totalRewardAmount = ((rewardPerVoteDiff * totalVotes) / WEEK) / UNIT;
-        uint256 feeAmount = (totalRewardAmount * protocolFeeRatio) / MAX_PCT ;
-        if(totalRewardAmount == 0 || feeAmount == 0) revert Errors.NullAmount();
+        if(totalRewardAmount == 0) revert Errors.NullAmount();
         if(totalRewardAmount > maxTotalRewardAmount) revert Errors.IncorrectMaxTotalRewardAmount();
-        if(feeAmount > maxFeeAmount) revert Errors.IncorrectMaxFeeAmount();
 
         // Pull all the rewards in this contract
         IERC20(_rewardToken).safeTransferFrom(creator, address(this), totalRewardAmount);
-        // And transfer the fees from the Pledge creator to the Chest contract
-        IERC20(_rewardToken).safeTransferFrom(creator, chestAddress, feeAmount);
 
         // Update the Pledge parameters in storage
         pledgeParams.rewardPerVotePerWeek = newRewardPerVotePerWeek;
