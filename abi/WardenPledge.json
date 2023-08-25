@@ -72,11 +72,6 @@
     },
     {
         "inputs": [],
-        "name": "IncorrectMaxFeeAmount",
-        "type": "error"
-    },
-    {
-        "inputs": [],
         "name": "IncorrectMaxTotalRewardAmount",
         "type": "error"
     },
@@ -103,6 +98,11 @@
     {
         "inputs": [],
         "name": "InvalidValue",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "NoRewards",
         "type": "error"
     },
     {
@@ -264,13 +264,13 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "oldRewardPerVote",
+                "name": "oldrewardPerVotePerWeek",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "newRewardPerVote",
+                "name": "newrewardPerVotePerWeek",
                 "type": "uint256"
             }
         ],
@@ -339,13 +339,19 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
+                "name": "id",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
                 "name": "targetVotes",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "rewardPerVote",
+                "name": "rewardPerVotePerWeek",
                 "type": "uint256"
             },
             {
@@ -370,7 +376,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "minRewardPerSecond",
+                "name": "minRewardPerWeek",
                 "type": "uint256"
             }
         ],
@@ -522,7 +528,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "minRewardPerSecond",
+                "name": "minRewardPerWeek",
                 "type": "uint256"
             }
         ],
@@ -610,7 +616,7 @@
             },
             {
                 "internalType": "uint256[]",
-                "name": "minRewardsPerSecond",
+                "name": "minRewardsPerWeek",
                 "type": "uint256[]"
             }
         ],
@@ -628,7 +634,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "minRewardPerSecond",
+                "name": "minRewardPerWeek",
                 "type": "uint256"
             }
         ],
@@ -687,7 +693,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "rewardPerVote",
+                "name": "rewardPerVotePerWeek",
                 "type": "uint256"
             },
             {
@@ -698,11 +704,6 @@
             {
                 "internalType": "uint256",
                 "name": "maxTotalRewardAmount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "maxFeeAmount",
                 "type": "uint256"
             }
         ],
@@ -746,11 +747,6 @@
                 "internalType": "uint256",
                 "name": "maxTotalRewardAmount",
                 "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "maxFeeAmount",
-                "type": "uint256"
             }
         ],
         "name": "extendPledge",
@@ -771,7 +767,7 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "rewardPerVote",
+                        "name": "rewardPerVotePerWeek",
                         "type": "uint256"
                     },
                     {
@@ -831,17 +827,12 @@
             },
             {
                 "internalType": "uint256",
-                "name": "newRewardPerVote",
+                "name": "newRewardPerVotePerWeek",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
                 "name": "maxTotalRewardAmount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "maxFeeAmount",
                 "type": "uint256"
             }
         ],
@@ -1066,7 +1057,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "rewardPerVote",
+                "name": "rewardPerVotePerWeek",
                 "type": "uint256"
             },
             {
@@ -1232,7 +1223,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "minRewardPerSecond",
+                "name": "minRewardPerWeek",
                 "type": "uint256"
             }
         ],
