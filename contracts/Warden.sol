@@ -86,59 +86,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice Address approved to manage the advised price */
     mapping(address => bool) public approvedManagers;
 
-    /** @notice Next period to update for the Reward State */
-    uint256 public nextUpdatePeriod;
-
-    /** @notice Reward Index by period */
-    mapping(uint256 => uint256) public periodRewardIndex;
-
-    /** @notice Base amount of reward to distribute weekly for each veCRV purchased */
-    uint256 public baseWeeklyDropPerVote;
-
-    /** @notice Minimum amount of reward to distribute weekly for each veCRV purchased */
-    uint256 public minWeeklyDropPerVote;
-
-    /** @notice Target amount of veCRV Boosts to be purchased in a period */
-    uint256 public targetPurchaseAmount;
-
-    /** @notice Amount of reward to distribute for the period */
-    mapping(uint256 => uint256) public periodDropPerVote;
-
-    /** @notice Amount of veCRV Boosts pruchased for the period */
-    mapping(uint256 => uint256) public periodPurchasedAmount;
-
-    /** @notice Decrease of the Purchased amount at the end of the period (since veBoost amounts decrease over time) */
-    mapping(uint256 => uint256) public periodEndPurchasedDecrease;
-
-    /** @notice Changes in the periodEndPurchasedDecrease for the period */
-    mapping(uint256 => uint256) public periodPurchasedDecreaseChanges;
-
-    /** @notice Amount of rewards paid in extra during last periods */
-    uint256 public extraPaidPast;
-
-    /** @notice Reamining rewards not distributed from last periods */
-    uint256 public remainingRewardPastPeriod;
-
-    struct PurchasedBoost {
-        uint256 amount;
-        uint256 startIndex;
-        uint128 startTimestamp;
-        uint128 endTimestamp;
-        address buyer;
-        bool claimed;
-    }
-
-    /** @notice Mapping of a Boost purchase info, stored by the Boost token ID */
-    mapping(uint256 => PurchasedBoost) public purchasedBoosts;
-
-    /** @notice List of the Boost purchased by an user */
-    mapping(address => uint256[]) public userPurchasedBoosts;
-
     /** @notice ID for the next purchased Boost */
     uint256 public nextBoostId = 1; // because we use ID 0 as an invalid one in the MultiBuy system
-    
-    /** @notice Reward token to distribute to buyers */
-    IERC20 public rewardToken;
 
 
     // Events :
@@ -161,8 +110,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     );
 
     event Claim(address indexed user, uint256 amount);
-
-    event ClaimReward(uint256 boostId, address indexed user, uint256 amount);
 
     event NewAdvisedPrice(uint256 newPrice);
 
@@ -207,13 +154,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         offers.push(BoostOffer(address(0), 0, 0, 0, 0, 0, false));
     }
 
-    // Modifiers :
-
-    modifier rewardStateUpdate() {
-        if(!updateRewardState()) revert Errors.FailRewardUpdate();
-        _;
-    }
-
     // Functions :
 
     /**
@@ -233,102 +173,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Updates the reward state for all past periods
-     * @dev Updates the reward state for all past periods
-     */
-    function updateRewardState() public whenNotPaused returns(bool){
-        if(nextUpdatePeriod == 0) return true; // Reward distribution not initialized
-        // Updates once a week
-        // If last update is less than a week ago, simply return
-        uint256 _currentPeriod = currentPeriod();
-        if(_currentPeriod <= nextUpdatePeriod) return true;
-
-        uint256 period = nextUpdatePeriod;
-
-        // Only update 100 period at a time
-        for(uint256 i; i < 100;){
-            if(period >= _currentPeriod) break;
-
-            uint256 nextPeriod = period + WEEK;
-
-            // Calculate the expected amount ot be distributed for the week (the period)
-            // And how much was distributed for that period (based on purchased amounts & period drop per vote)
-            uint256 weeklyDropAmount = (baseWeeklyDropPerVote * targetPurchaseAmount) / UNIT;
-            uint256 periodRewardAmount = (periodPurchasedAmount[period] * periodDropPerVote[period]) / UNIT;
-
-            // In case we distributed less than the objective
-            if(periodRewardAmount <= weeklyDropAmount){
-                uint256 undistributedAmount = weeklyDropAmount - periodRewardAmount;
-                
-                // Remove any extra amount distributed from past periods
-                // And set any remaining rewards to be distributed as surplus for next period
-                if(extraPaidPast != 0){
-                    if(undistributedAmount >= extraPaidPast){
-                        undistributedAmount -= extraPaidPast;
-                        extraPaidPast = 0;
-                    } else{
-                        extraPaidPast -= undistributedAmount;
-                        undistributedAmount = 0;
-                    }
-                }
-                remainingRewardPastPeriod += undistributedAmount;
-            } else { // In case we distributed more than the objective
-                uint256 overdistributedAmount = periodRewardAmount - weeklyDropAmount;
-
-                // Remove the extra distributed from the remaining rewards from past period (if there is any)
-                // And set the rest of the extra distributed rewards to be accounted for next period
-                if(remainingRewardPastPeriod != 0){
-                    if(overdistributedAmount >= remainingRewardPastPeriod){
-                        overdistributedAmount -= remainingRewardPastPeriod;
-                        remainingRewardPastPeriod = 0;
-                    } else{
-                        remainingRewardPastPeriod -= overdistributedAmount;
-                        overdistributedAmount = 0;
-                    }
-                }
-                extraPaidPast += overdistributedAmount;
-            }
-
-            // Calculate nextPeriod new drop
-            // Based on the basic weekly drop, and any extra reward paid past periods, or remaining rewards from last period
-            // In case remainingRewardPastPeriod > 0, then the nextPeriodDropPerVote should be higher than the base one
-            // And in case there is extraPaidPast >0, the nextPeriodDropPerVote should be less
-            // But nextPeriodDropPerVote can never be less than minWeeklyDropPerVote
-            // (In that case, we expected the next period to have extra rewards paid again, and to reach back the objective on future periods)
-            uint256 nextPeriodDropPerVote;
-            if(extraPaidPast >= weeklyDropAmount + remainingRewardPastPeriod){
-                nextPeriodDropPerVote = minWeeklyDropPerVote;
-            } else {
-                uint256 tempWeeklyDropPerVote = ((weeklyDropAmount + remainingRewardPastPeriod - extraPaidPast) * UNIT) / targetPurchaseAmount;
-                nextPeriodDropPerVote = tempWeeklyDropPerVote > minWeeklyDropPerVote ? tempWeeklyDropPerVote : minWeeklyDropPerVote;
-            }
-            periodDropPerVote[nextPeriod] = nextPeriodDropPerVote;
-
-            // Update the index for the period, based on the period DropPerVote
-            periodRewardIndex[nextPeriod] = periodRewardIndex[period] + periodDropPerVote[period];
-
-            // Make next period purchased amount decrease changes
-            if(periodPurchasedAmount[period] >= periodEndPurchasedDecrease[period]){
-                periodPurchasedAmount[nextPeriod] += periodPurchasedAmount[period] - periodEndPurchasedDecrease[period];
-                // Else, we consider the current period purchased amount as  totally removed
-            }
-            if(periodEndPurchasedDecrease[period] >= periodPurchasedDecreaseChanges[nextPeriod]){
-                periodEndPurchasedDecrease[nextPeriod] += periodEndPurchasedDecrease[period] - periodPurchasedDecreaseChanges[nextPeriod];
-                // Else the decrease from the current period does not need to be kept for the next period
-            }
-
-            // Go to next period
-            period = nextPeriod;
-            unchecked{ ++i; }
-        }
-
-        // Set the period where we stopped (and not updated), as the next period to be updated
-        nextUpdatePeriod = period;
-
-        return true;
-    }
-
-    /**
      * @notice Registers a new user wanting to sell its delegation
      * @dev Regsiters a new user, creates a BoostOffer with the given parameters
      * @param pricePerVote Price of 1 vote per second (in wei)
@@ -345,7 +189,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
-    ) external whenNotPaused rewardStateUpdate returns(bool) {
+    ) external whenNotPaused returns(bool) {
         address user = msg.sender;
         if(userIndex[user] != 0) revert Errors.AlreadyRegistered();
         if(delegationBoost.allowance(user, address(this)) != MAX_UINT) revert Errors.WardenNotOperator();
@@ -385,7 +229,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
-    ) external whenNotPaused rewardStateUpdate returns(bool) {
+    ) external whenNotPaused returns(bool) {
         // Fetch the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
@@ -427,7 +271,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function updateOfferPrice(
         uint256 pricePerVote,
         bool useAdvicePrice
-    ) external whenNotPaused rewardStateUpdate returns(bool) {
+    ) external whenNotPaused returns(bool) {
         // Fet the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
@@ -477,7 +321,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Remove the BoostOffer of the user, and claim any remaining fees earned
      * @dev User's BoostOffer is removed from the listing, and any unclaimed fees is sent
      */
-    function quit() external whenNotPaused nonReentrant rewardStateUpdate returns(bool) {
+    function quit() external whenNotPaused nonReentrant returns(bool) {
         address user = msg.sender;
         if(userIndex[user] == 0) revert Errors.NotRegistered();
 
@@ -604,7 +448,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 amount,
         uint256 duration, //in weeks
         uint256 maxFeeAmount
-    ) external nonReentrant whenNotPaused rewardStateUpdate returns(uint256) {
+    ) external nonReentrant whenNotPaused returns(uint256) {
         if(delegator == address(0) || receiver == address(0)) revert Errors.ZeroAddress();
         if(userIndex[delegator] == 0) revert Errors.NotRegistered();
         if(maxFeeAmount == 0) revert Errors.NullFees();
@@ -636,7 +480,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 percent,
         uint256 duration, //in weeks
         uint256 maxFeeAmount
-    ) external nonReentrant whenNotPaused rewardStateUpdate returns(uint256) {
+    ) external nonReentrant whenNotPaused returns(uint256) {
         if(delegator == address(0) || receiver == address(0)) revert Errors.ZeroAddress();
         if(userIndex[delegator] == 0) revert Errors.NotRegistered();
         if(maxFeeAmount == 0) revert Errors.NullFees();
@@ -664,64 +508,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Claims all earned fees
      * @dev Send all the user's earned fees
      */
-    function claim() external nonReentrant rewardStateUpdate returns(bool) {
+    function claim() external nonReentrant returns(bool) {
         if(earnedFees[msg.sender] == 0) revert Errors.NullClaimAmount();
         return _claim(msg.sender, earnedFees[msg.sender]);
-    }
-
-    /**
-     * @notice Get all Boosts purchased by an user
-     * @dev Get all Boosts purchased by an user
-     * @param user Address of the buyer
-     */
-    function getUserPurchasedBoosts(address user) external view returns(uint256[] memory) {
-        return userPurchasedBoosts[user];
-    }
-
-    /**
-     * @notice Get the Purchased Boost data
-     * @dev Get the Purchased Boost struct from storage
-     * @param boostId Id of the veBoost
-     */
-    function getPurchasedBoost(uint256 boostId) external view returns(PurchasedBoost memory) {
-        return purchasedBoosts[boostId];
-    }
-
-    /**
-     * @notice Get the amount of rewards for a Boost
-     * @dev Get the amount of rewards for a Boost
-     * @param boostId Id of the veBoost
-     */
-    function getBoostReward(uint256 boostId) external view returns(uint256) {
-        if(boostId >= nextBoostId) revert Errors.InvalidBoostId();
-        return _getBoostRewardAmount(boostId);
-    }
-
-    /**
-     * @notice Claim the rewards for a purchased Boost
-     * @dev Claim the rewards for a purchased Boost
-     * @param boostId Id of the veBoost
-     */
-    function claimBoostReward(uint256 boostId) external nonReentrant rewardStateUpdate returns(bool) {
-        if(boostId >= nextBoostId) revert Errors.InvalidBoostId();
-        return _claimBoostRewards(boostId);
-    }
-
-    /**
-     * @notice Claim the rewards for multiple Boosts
-     * @dev Claim the rewards for multiple Boosts
-     * @param boostIds List of veBoost Ids
-     */
-    function claimMultipleBoostReward(uint256[] calldata boostIds) external nonReentrant rewardStateUpdate returns(bool) {
-        uint256 length = boostIds.length;
-        for(uint256 i; i < length;) {
-            if(boostIds[i] >= nextBoostId) revert Errors.InvalidBoostId();
-            require(_claimBoostRewards(boostIds[i]));
-
-            unchecked{ ++i; }
-        }
-
-        return true;
     }
 
     function _estimateFees(
@@ -834,40 +623,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             delegator
         );
 
-
-        // If rewards were started, otherwise no need to write for that Boost
-        if(nextUpdatePeriod != 0) { 
-
-            // Find the current reward index
-            vars.currentPeriod = currentPeriod();
-            vars.currentRewardIndex = periodRewardIndex[vars.currentPeriod] + (
-                (periodDropPerVote[vars.currentPeriod] * (block.timestamp - vars.currentPeriod)) / WEEK
-            );
-
-            // Add the amount purchased to the period purchased amount (& the decrease + decrease change)
-            vars.boostWeeklyDecrease = (amount * WEEK) / vars.boostDuration;
-            vars.nextPeriod = vars.currentPeriod + WEEK;
-            periodPurchasedAmount[vars.currentPeriod] += amount;
-            periodEndPurchasedDecrease[vars.currentPeriod] += (vars.boostWeeklyDecrease * (vars.nextPeriod - block.timestamp)) / WEEK;
-            periodPurchasedDecreaseChanges[vars.nextPeriod] += (vars.boostWeeklyDecrease * (vars.nextPeriod - block.timestamp)) / WEEK;
-
-            if(vars.expiryTime != vars.nextPeriod){
-                periodEndPurchasedDecrease[vars.nextPeriod] += vars.boostWeeklyDecrease;
-                periodPurchasedDecreaseChanges[vars.expiryTime] += vars.boostWeeklyDecrease;
-            }
-
-            // Write the Purchase for rewards
-            purchasedBoosts[vars.newTokenId] = PurchasedBoost(
-                amount,
-                vars.currentRewardIndex,
-                uint128(block.timestamp),
-                uint128(vars.expiryTime),
-                receiver,
-                false
-            );
-            userPurchasedBoosts[receiver].push(vars.newTokenId);
-        }
-
         emit BoostPurchase(
             delegator,
             receiver,
@@ -942,88 +697,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
-    function _getBoostRewardAmount(uint256 boostId) internal view returns(uint256) {
-        PurchasedBoost memory boost = purchasedBoosts[boostId];
-        if(boost.buyer == address(0)) revert Errors.BoostRewardsNull();
-        if(boost.claimed) return 0;
-        if(currentPeriod() <= boost.endTimestamp) return 0;
-        if(nextUpdatePeriod <= boost.endTimestamp) revert Errors.RewardsNotUpdated();
-
-        uint256 boostAmount = boost.amount;
-        uint256 boostDuration = boost.endTimestamp - boost.startTimestamp;
-        uint256 boostDecreaseStep = boostAmount / (boostDuration);
-        uint256 boostPeriodDecrease = boostDecreaseStep * WEEK;
-
-        uint256 rewardAmount;
-
-        uint256 indexDiff;
-        uint256 periodBoostAmount;
-        uint256 endPeriodBoostAmount;
-
-        uint256 period = (boost.startTimestamp / WEEK) * WEEK;
-        uint256 nextPeriod = period + WEEK;
-
-        // 1st period (if incomplete)
-        if(boost.startTimestamp > period) {
-            indexDiff = periodRewardIndex[nextPeriod] - boost.startIndex;
-            uint256 timeDiff = nextPeriod - boost.startTimestamp;
-
-            endPeriodBoostAmount = boostAmount - (boostDecreaseStep * timeDiff);
-
-            periodBoostAmount = endPeriodBoostAmount + ((boostDecreaseStep + (boostDecreaseStep * timeDiff)) / 2);
-
-            rewardAmount += (indexDiff * periodBoostAmount) / UNIT;
-
-            boostAmount = endPeriodBoostAmount;
-            period = nextPeriod;
-            nextPeriod = period + WEEK;
-        }
-
-        uint256 nbPeriods = boostDuration / WEEK;
-        // all complete periods
-        for(uint256 j; j < nbPeriods;){
-            indexDiff = periodRewardIndex[nextPeriod] - periodRewardIndex[period];
-
-            endPeriodBoostAmount = boostAmount - (boostDecreaseStep * WEEK);
-
-            periodBoostAmount = endPeriodBoostAmount + ((boostDecreaseStep + boostPeriodDecrease) / 2);
-
-            rewardAmount += (indexDiff * periodBoostAmount) / UNIT;
-
-            boostAmount = endPeriodBoostAmount;
-            period = nextPeriod;
-            nextPeriod = period + WEEK;
-
-            unchecked{ ++j; }
-        }
-
-        return rewardAmount;
-    }
-
-    function _claimBoostRewards(uint256 boostId) internal returns(bool) {
-        if(nextUpdatePeriod == 0) revert Errors.RewardsNotStarted();
-        PurchasedBoost storage boost = purchasedBoosts[boostId];
-        if(boost.buyer == address(0)) revert Errors.BoostRewardsNull();
-
-        if(msg.sender != boost.buyer) revert Errors.NotBoostBuyer();
-        if(boost.claimed) revert Errors.AlreadyClaimed();
-        if(currentPeriod() <= boost.endTimestamp) revert Errors.CannotClaim();
-
-        uint256 rewardAmount = _getBoostRewardAmount(boostId);
-
-        if(rewardAmount == 0) return true; // nothing to claim, return
-
-        if(rewardAmount > rewardToken.balanceOf(address(this))) revert Errors.InsufficientRewardCash();
-
-        boost.claimed = true;
-
-        rewardToken.safeTransfer(msg.sender, rewardAmount);
-
-        emit ClaimReward(boostId, msg.sender, rewardAmount);
-
-        return true;
-    }
-
     // Manager methods:
 
     /**
@@ -1039,68 +712,6 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     // Admin Functions :
-
-    /**
-     * @notice Set the start parameters for reward distribution, and start accruint rewards to boost purchases
-     * @param _rewardToken Address of the token to use as rewards
-     * @param _baseWeeklyDropPerVote Base amount of weekly rewards to be distributed for the week (in wei)
-     * @param _minWeeklyDropPerVote Minimum amount of reward to be distributed for the week (in wei)
-     * @param _targetPurchaseAmount Target amount of veCRV in Boost to be purchased weekly (in wei)
-     */
-    function startRewardDistribution(
-        address _rewardToken,
-        uint256 _baseWeeklyDropPerVote,
-        uint256 _minWeeklyDropPerVote,
-        uint256 _targetPurchaseAmount
-    ) external onlyOwner {
-        if(_rewardToken == address(0)) revert Errors.ZeroAddress();
-        if(_baseWeeklyDropPerVote == 0 || _minWeeklyDropPerVote == 0 ||  _targetPurchaseAmount == 0) revert Errors.NullValue();
-        if(_baseWeeklyDropPerVote < _minWeeklyDropPerVote) revert Errors.BaseDropTooLow();
-        if(nextUpdatePeriod != 0) revert Errors.RewardsAlreadyStarted();
-
-        rewardToken = IERC20(_rewardToken);
-
-        baseWeeklyDropPerVote = _baseWeeklyDropPerVote;
-        minWeeklyDropPerVote = _minWeeklyDropPerVote;
-        targetPurchaseAmount = _targetPurchaseAmount;
-
-        // Initial period and initial index
-        uint256 startPeriod = ((block.timestamp + WEEK) / WEEK) * WEEK;
-        periodRewardIndex[startPeriod] = 0;
-        nextUpdatePeriod = startPeriod;
-
-        //Initial drop
-        periodDropPerVote[startPeriod] = baseWeeklyDropPerVote;
-    }
-
-    /**
-     * @notice Updates the base amount of weekly rewards to be distributed for the week
-     * @param newBaseWeeklyDropPerVote New base amount (in wei)
-     */
-    function setBaseWeeklyDropPerVote(uint256 newBaseWeeklyDropPerVote) external onlyOwner {
-        if(newBaseWeeklyDropPerVote == 0) revert Errors.NullValue();
-        if(newBaseWeeklyDropPerVote < minWeeklyDropPerVote) revert Errors.BaseDropTooLow();
-        baseWeeklyDropPerVote = newBaseWeeklyDropPerVote;
-    }
-
-    /**
-     * @notice Updates the minimum amount of weekly rewards to be distributed for the week
-     * @param newMinWeeklyDropPerVote New min amount (in wei)
-     */
-    function setMinWeeklyDropPerVote(uint256 newMinWeeklyDropPerVote) external onlyOwner {
-        if(newMinWeeklyDropPerVote == 0) revert Errors.NullValue();
-        if(baseWeeklyDropPerVote < newMinWeeklyDropPerVote) revert Errors.MinDropTooHigh();
-        minWeeklyDropPerVote = newMinWeeklyDropPerVote;
-    }
-
-    /**
-     * @notice Updates the target amount of veCRV to be purchased weekly through Boosts
-     * @param newTargetPurchaseAmount New target amount (in wei)
-     */
-    function setTargetPurchaseAmount(uint256 newTargetPurchaseAmount) external onlyOwner {
-        if(newTargetPurchaseAmount == 0) revert Errors.NullValue();
-        targetPurchaseAmount = newTargetPurchaseAmount;
-    }
 
     /**
      * @notice Updates the minimum percent required to buy a Boost

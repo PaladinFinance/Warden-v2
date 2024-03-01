@@ -9,7 +9,6 @@ import { IVotingEscrow } from "../typechain/interfaces/IVotingEscrow";
 import { IVotingEscrow__factory } from "../typechain/factories/interfaces/IVotingEscrow__factory";
 import { IBoostV2 } from "../typechain/interfaces/IBoostV2";
 import { IBoostV2__factory } from "../typechain/factories/interfaces/IBoostV2__factory";
-import { BoostV2 } from "../typechain/tests/BoostV2.vy/BoostV2";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
