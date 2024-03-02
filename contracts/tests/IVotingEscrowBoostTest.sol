@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.10;
+pragma solidity 0.8.20;
 
 
 /** @title Custom Interface for Aladdin veFXN VotingEscrowBoost contract  */
-interface IVotingEscrowBoost {
+interface IVotingEscrowBoostTest {
 
     event Boost(
         address indexed owner,

@@ -11,3 +11,4 @@ flatten/
 bin/
 coverage*
 .env
+**/temp.ts
