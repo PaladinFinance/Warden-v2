@@ -57,8 +57,8 @@ async function findBalancesSlot(tokenAddress: string) {
 
 (async () => {
 
-    const token_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+    /*const token_address = "0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
 
-    const slot = await findBalancesSlot(token_address)
+    const slot = await findBalancesSlot(token_address)*/
 
 })();
