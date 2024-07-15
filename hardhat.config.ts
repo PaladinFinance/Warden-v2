@@ -44,7 +44,7 @@ const config: HardhatUserConfig = {
     overrides: {},
   },
   vyper: {
-    version: "0.3.3",
+    version: "0.3.10",
   },
   contractSizer: {
     alphaSort: true,
